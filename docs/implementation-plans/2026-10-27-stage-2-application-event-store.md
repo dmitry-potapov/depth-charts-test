@@ -18,7 +18,7 @@
 - Every async method takes and forwards a `CancellationToken`.
 - `IEventStore` and `ICommandPublisher` signatures exactly as spec §4.
 - Commands serialise as JSON with a `type` discriminator: `"add-player"` / `"remove-player"`, camelCase property names (`JsonSerializerDefaults.Web`).
-- `shortcut:` comment on `EfEventStore` verbatim in spirit of spec §5: InMemory enforces no unique index or transaction; correct only with the single sequential consumer; upgrade = relational provider with unique `(StreamId, Version)` and unique `CommandId`.
+- `shortcut:` comment on `EfEventStore` verbatim in spirit of spec §5: InMemory enforces no unique index or transaction; correct only with the single sequential consumer; upgrade = relational provider with unique `(StreamId, Version)` and unique `ProcessedCommand.CommandId`.
 - Before calling the stage done: `dotnet build` and `dotnet test` both pass.
 
 ## Review Focus
@@ -113,9 +113,9 @@ git commit -m "feat(application): add event store abstractions and command contr
 
 Decisions:
 - `EventType` = `event.GetType().Name`; deserialise through a private `Dictionary<string, Type>` of the two event types; unknown type throws `InvalidOperationException`. `Data` = `JsonSerializer.Serialize(event, event.GetType())` with web defaults.
-- `AppendAsync`: current = `MaxAsync(e => (int?)e.Version) ?? 0` over the stream; mismatch throws `ConcurrencyException` naming stream, expected and actual. Each event gets `Version = expectedVersion + i + 1`, the same `CommandId`, and its own `OccurredAt`. One `SaveChangesAsync(ct)`.
+- `AppendAsync`: current = `MaxAsync(e => (int?)e.Version) ?? 0` over the stream; mismatch throws `ConcurrencyException` naming stream, expected and actual. Each event gets `Version = expectedVersion + i + 1`, the same `CommandId`, and its own `OccurredAt`. It also adds a `ProcessedCommand { CommandId }` row (even for an empty batch) after the version check. One `SaveChangesAsync(ct)`.
 - `LoadAsync`: filter stream (and `OccurredAt <= asOf`), `OrderBy(Version)`, `ToListAsync(ct)`, then deserialise.
-- `HasProcessedAsync`: `AnyAsync(e => e.CommandId == commandId, ct)`.
+- `HasProcessedAsync`: `db.ProcessedCommands.AnyAsync(c => c.CommandId == commandId, ct)`.
 
 - [ ] **Step 1: Write the failing tests** in `EfEventStoreTests.cs` (build events directly with the stage 1 records; times `T0`, `T0+1m`, `T0+2m`):
   - `AppendThenLoad_RoundTripsAllFields`: append an added event with `NaturalPosition = WR`, one with `null`, and a removed event → `Assert.Equal` each loaded event to the original (record equality), in version order.
@@ -159,10 +159,11 @@ git commit -m "feat(infrastructure): add EF Core InMemory event store"
 - [ ] **Step 1: Write the failing tests.** `DepthChartCommandHandlerTests` (store from `TestStore.Create()`):
   - `Handle_AddPlayer_AppendsEvent`: one `AddPlayerCommand` → `LoadAsync("nfl:tb", null)` has one `PlayerAddedToDepthChart` with `OccurredAt == occurredAt`.
   - `Handle_DuplicateCommandId_Ignored`: add Bob WR (id X), then remove Bob WR, then replay the add with id X → stream has 2 events and Bob is not on WR.
-  - `Handle_NoOpRemove_AppendsNothing`: remove on empty chart → stream empty, `HasProcessedAsync` false.
+  - `Handle_NoOpRemove_AppendsNothing`: remove on empty chart → stream empty, `HasProcessedAsync` true.
+  - `Handle_RedeliveredNoOpRemove_DoesNotRemoveLaterAddedPlayer`: no-op remove (id X), add Bob, redeliver X → Bob still on the chart.
   - `Handle_InvalidInput_ThrowsDomainValidation`: `Team = "t:b"` → `DomainValidationException`; `PlayerId = 0` → same; stream empty.
   - `Handle_DifferentCasing_SameStream`: add via `("nfl","TB")`, add via `("NFL","tb")` → `"nfl:tb"` has 2 events.
-  - `Handle_StaleVersion_PropagatesConcurrencyException`: use a small fake `IEventStore` in the test file whose `LoadAsync` returns `[]` but `AppendAsync` delegates to a real store already holding one event → `ConcurrencyException`.
+  - `Handle_StaleVersion_PropagatesConcurrencyException`: use a small fake `IEventStore` in the test file whose `LoadAsync` returns `[]` but `AppendAsync` delegates to a real store already holding one event → `ConcurrencyException`; the real store still has 1 event and `HasProcessedAsync(id)` is false (command stays retryable).
 
   `DepthChartQueryHandlerTests` (seed through the command handler):
   - `FullChart_BriefExample`: the brief's four adds → `WR` ids `[2,1,3]`, `KR` `[1]`.

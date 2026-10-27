@@ -120,7 +120,7 @@ The contracts are shared by the Producer and the Processor and serialised as JSO
 1. If `HasProcessedAsync(commandId)` is true, it returns without doing anything.
 2. It builds the value types. An invalid value throws a domain validation exception.
 3. It loads the stream, replays it into a `DepthChart`, and calls the command method.
-4. If any events were emitted, it calls `AppendAsync(streamId, chart.Version, commandId, events)`.
+4. It always calls `AppendAsync(streamId, chart.Version, commandId, events)`, even when `events` is empty, so a no-op command is still recorded as processed and a redelivery can't run against later state.
 
 There are two query handlers:
 
@@ -135,9 +135,11 @@ Each one loads the stream with `asOf`, replays it, and reads the result. A strea
 
 `StoredEvent { long Id; string StreamId; int Version; string EventType; string Data; DateTimeOffset OccurredAt; Guid CommandId }`
 
+`ProcessedCommand { Guid CommandId }` is a separate table with one row per handled command, including commands that emitted no events. `HasProcessedAsync` reads it.
+
 - `LoadAsync` filters by `StreamId`, and also by `OccurredAt <= asOf` when `asOf` is given. It orders by `Version` and deserialises each event by `EventType`.
-- `AppendAsync` checks in code that the stream's current max version equals `expectedVersion`. If it doesn't, the call throws a `ConcurrencyException`. Otherwise it writes the events as versions `expectedVersion+1 …`.
-- `shortcut:` the InMemory provider enforces neither unique indexes nor transactions. Correctness relies on the single, sequential consumer described in §5.2. To upgrade, move to a relational provider with a unique `(StreamId, Version)` index and a unique `CommandId`.
+- `AppendAsync` checks in code that the stream's current max version equals `expectedVersion`. If it doesn't, the call throws a `ConcurrencyException` and records nothing, so the command stays retryable. Otherwise it writes the events as versions `expectedVersion+1 …` and the `ProcessedCommand` row in the same `SaveChangesAsync`.
+- `shortcut:` the InMemory provider enforces neither unique indexes nor transactions. Correctness relies on the single, sequential consumer described in §5.2. To upgrade, move to a relational provider with a unique `(StreamId, Version)` index and a unique `ProcessedCommand.CommandId`. Keep the processed-commands table, or a redelivered no-op command would run again.
 
 ### Kafka
 
@@ -194,7 +196,7 @@ The README documents these steps and the assumptions in §3.
 |---|---|
 | Domain | Emitted events carry the chart's `Sport` and `Team`. `Team` rejects empty values and `:`; `Sport` rejects anything but letters and digits. `Apply` rejects another team's events, clamps an out-of-range depth, and updates a re-added player's name on every position. Empty positions are left out of the full chart. The brief's example end to end. Insert-and-bump. Null depth and depth past the end both append. A negative depth throws. Moving a player within a position. Removing a player who is absent emits no event. `GetPlayersUnder` for the last player, an absent player and an absent position. The same player on several positions. MLB positions such as `1B`. Value-type invariants, and a non-positive player id throws in `Player`, `RemovePlayer` and `GetPlayersUnder`. |
 | Event sourcing | Replaying the emitted events rebuilds an equal state. Loading with `asOf` between events gives the earlier chart. |
-| Application + EF store | A handler appends events. A duplicate `CommandId` is ignored. A stale `expectedVersion` throws `ConcurrencyException`. A no-op remove appends nothing. |
+| Application + EF store | A handler appends events. A duplicate `CommandId` is ignored. A stale `expectedVersion` throws `ConcurrencyException`. A no-op remove appends no events but is still recorded as processed. A stale version leaves the command unprocessed. |
 | Api | `WebApplicationFactory` with `Kafka:ConsumerEnabled=false`, the store seeded through the handler: chart, below, `asOf`, and 400 cases. |
 
 Out of scope:

@@ -132,8 +132,11 @@ public class DepthChartCommandHandlerTests
 
         var handler = new DepthChartCommandHandler(new StaleLoadStore(real));
 
-        await Assert.ThrowsAsync<ConcurrencyException>(() =>
-            handler.HandleAsync(Add(playerId: 2, name: "Alice"), T0, default));
+        var losing = Add(playerId: 2, name: "Alice");
+        await Assert.ThrowsAsync<ConcurrencyException>(() => handler.HandleAsync(losing, T0, default));
+
+        Assert.False(await real.HasProcessedAsync(losing.CommandId, default));
+        Assert.Single(await real.LoadAsync("nfl:tb", null, default));
     }
 
     // Loads an empty stream (a stale read) but appends to the real store.
