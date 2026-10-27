@@ -32,6 +32,17 @@ public class CommandMessageProcessorTests
             throw new InvalidOperationException("boom");
     }
 
+    private sealed class CancellingStore : IEventStore
+    {
+        public Task<IReadOnlyList<IDomainEvent>> LoadAsync(string streamId, DateTimeOffset? asOf, CancellationToken ct) =>
+            throw new OperationCanceledException(ct);
+        public Task<bool> HasProcessedAsync(Guid commandId, CancellationToken ct) =>
+            throw new OperationCanceledException(ct);
+        public Task AppendAsync(string streamId, int expectedVersion, Guid commandId,
+            IReadOnlyList<IDomainEvent> events, CancellationToken ct) =>
+            throw new OperationCanceledException(ct);
+    }
+
     private static (CommandMessageProcessor Processor, IEventStore Store, ListLogger Logger) Create(IEventStore? store = null)
     {
         store ??= TestStore.Create();
@@ -93,9 +104,22 @@ public class CommandMessageProcessorTests
     {
         var (processor, store, logger) = Create();
 
-        await processor.ProcessAsync(AddJson(team: "t:b"), T0, default);
+        await processor.ProcessAsync(AddJson(playerId: 0), T0, default);
 
         Assert.Equal(LogLevel.Warning, Assert.Single(logger.Levels));
+        Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
+    }
+
+    [Fact]
+    public async Task Process_CancelledDuringHandling_RethrowsWithoutLogging()
+    {
+        var (processor, _, logger) = Create(new CancellingStore());
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => processor.ProcessAsync(AddJson(), T0, cts.Token));
+
+        Assert.Empty(logger.Levels);
     }
 
     [Fact]

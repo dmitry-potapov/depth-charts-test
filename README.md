@@ -1,6 +1,6 @@
 # Depth Charts
 
-Event-sourced sports depth charts on .NET 10 (Clean Architecture). The Domain and Application layers, an in-memory event store and read-only HTTP endpoints are implemented so far; there is no Kafka consumer yet, so nothing writes commands outside the tests.
+Event-sourced sports depth charts on .NET 10 (Clean Architecture). The Domain and Application layers, an in-memory event store, a Kafka command consumer and read-only HTTP endpoints are implemented.
 
 ## Domain rules
 
@@ -59,7 +59,7 @@ An invalid sport, team, position or player id throws `DomainValidationException`
 
 ## Configuration
 
-`appsettings.json` holds only logging and `AllowedHosts`. The `http` launch profile listens on `http://localhost:5000` in `Development`.
+`appsettings.json` has a `Kafka` section: `BootstrapServers` (`localhost:9092`), `Topic` (`depth-chart-commands`) and `ConsumerEnabled` (`true`). The Api starts `KafkaCommandConsumer` by default, so run `docker compose up -d` first. Without a broker the Api still starts but serves empty charts; set `Kafka:ConsumerEnabled` to `false` to run it without Kafka. The `http` launch profile listens on `http://localhost:5000` in `Development`.
 
 ## Commands
 
