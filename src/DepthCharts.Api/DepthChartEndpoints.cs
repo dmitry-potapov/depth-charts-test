@@ -32,7 +32,12 @@ public static class DepthChartEndpoints
     }
 
     // ISO-8601 only; a lenient TryParse would read "10/11/2026" as a US date. Offset (K) is optional, defaulting to UTC.
-    private const string IsoFormat = "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK";
+    private static readonly string[] IsoFormats =
+    [
+        "yyyy-MM-dd",
+        "yyyy-MM-dd'T'HH:mmK",
+        "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK",
+    ];
 
     private static PlayerResponse ToResponse(Player p) => new(p.Id, p.Name);
 
@@ -42,7 +47,8 @@ public static class DepthChartEndpoints
     {
         at = null;
         if (string.IsNullOrEmpty(asOf)) return true;
-        if (!DateTimeOffset.TryParseExact(asOf, IsoFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
+        // An unencoded '+' in the offset arrives as a space; spaces are otherwise invalid, so restore it.
+        if (!DateTimeOffset.TryParseExact(asOf.Replace(' ', '+'), IsoFormats, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
             return false;
         at = parsed;
         return true;

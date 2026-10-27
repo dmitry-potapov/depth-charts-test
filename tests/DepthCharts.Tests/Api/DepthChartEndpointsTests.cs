@@ -109,10 +109,30 @@ public class DepthChartEndpointsTests(ApiFactory factory) : IClassFixture<ApiFac
 
     [Theory]
     [InlineData("10/11/2026")]
-    [InlineData("2026-10-27")]
     [InlineData("Oct 27 2026 9:00")]
     public async Task Chart_NonIsoAsOf_400(string asOf) =>
         AssertProblem(await _client.GetAsync("/depth-charts/nfl/t7?asOf=" + Uri.EscapeDataString(asOf)));
+
+    [Theory]
+    [InlineData("2026-10-27T10:30:00+02:00")] // unencoded '+' arrives as a space
+    [InlineData("2026-10-27T10:30+02:00")]
+    [InlineData("2026-10-27T10:30:00+0200")]
+    [InlineData("2026-10-27T08:30Z")]
+    public async Task Chart_ValidIsoAsOfForms_BeforeEvent_EmptyChart(string asOf)
+    {
+        await factory.SeedAsync(Add("t10", 1, "Bob", "WR", null), T0);
+
+        Assert.Equal("{}", await _client.GetStringAsync("/depth-charts/nfl/t10?asOf=" + asOf));
+    }
+
+    [Fact]
+    public async Task Chart_DateOnlyAsOf_IsMidnightUtc()
+    {
+        await factory.SeedAsync(Add("t11", 1, "Bob", "WR", null), T0);
+
+        Assert.Equal("{}", await _client.GetStringAsync("/depth-charts/nfl/t11?asOf=2026-10-27"));
+        Assert.Contains("WR", await _client.GetStringAsync("/depth-charts/nfl/t11?asOf=2026-10-28"));
+    }
 
     [Fact]
     public async Task Below_AsOf_ReturnsEarlierChart()

@@ -66,7 +66,7 @@ tests/DepthCharts.Tests/
   - `public static IEndpointRouteBuilder MapDepthChartEndpoints(this IEndpointRouteBuilder app)`:
     - `GET /depth-charts/{sport}/{team}` → `Dictionary<string, PlayerResponse[]>` keyed by `Position.Value`, in `GetFullChart()` order.
     - `GET /depth-charts/{sport}/{team}/positions/{position}/players/{playerId:int}/below` → `PlayerResponse[]`.
-    - Both take `string? asOf` from the query; null/empty → no filter; otherwise `DateTimeOffset.TryParse(asOf, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out …)`, failure → `TypedResults.Problem(statusCode: 400, title: "Invalid asOf")`. This is boundary validation, the only logic allowed in the endpoint besides mapping.
+    - Both take `string? asOf` from the query; null/empty → no filter; otherwise `DateTimeOffset.TryParseExact` against explicit ISO-8601 formats only (`yyyy-MM-dd`, `…THH:mmK`, `…THH:mm:ss[.fffffff]K`; offset optional, default UTC; a space is read as an unencoded `+`), failure → `TypedResults.Problem(statusCode: 400, title: "Invalid asOf")`. This is boundary validation, the only logic allowed in the endpoint besides mapping.
   - `DomainValidationExceptionHandler : IExceptionHandler` → status 400, writes ProblemDetails via `IProblemDetailsService` with `Detail = exception.Message`; returns `false` for other exceptions.
   - `Program.cs`: `AddProblemDetails()`, `AddExceptionHandler<DomainValidationExceptionHandler>()`, `AddApplication()`, `AddInfrastructure(builder.Configuration)`; `UseExceptionHandler()`; `MapDepthChartEndpoints()`.
   - `launchSettings.json`: one `http` profile, `applicationUrl` `http://localhost:5000`.
