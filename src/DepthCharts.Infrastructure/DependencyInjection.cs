@@ -22,4 +22,12 @@ public static class DependencyInjection
         services.AddHostedService<KafkaCommandConsumer>();
         return services;
     }
+
+    // For the Producer CLI: publishing only, no store or consumer.
+    public static IServiceCollection AddCommandPublisher(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<KafkaOptions>(configuration.GetSection("Kafka"));
+        services.AddSingleton<ICommandPublisher, KafkaCommandPublisher>();
+        return services;
+    }
 }
