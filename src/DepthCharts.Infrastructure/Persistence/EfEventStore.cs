@@ -19,15 +19,13 @@ public sealed class EfEventStore(EventStoreDbContext db) : IEventStore
 
     public async Task<IReadOnlyList<IDomainEvent>> LoadAsync(string streamId, DateTimeOffset? asOf, CancellationToken ct)
     {
-        var query = db.Events.Where(e => e.StreamId == streamId);
-        if (asOf is { } cutoff) query = query.Where(e => e.OccurredAt <= cutoff);
-
-        var rows = await query.OrderBy(e => e.Version).ToListAsync(ct);
-        return rows.Select(Deserialize).ToList();
+        var rows = await db.Events.Where(e => e.StreamId == streamId).OrderBy(e => e.Version).ToListAsync(ct);
+        // Stop at the first late event so the result is always a prefix, even if timestamps go backwards.
+        return rows.TakeWhile(e => asOf is not { } cutoff || e.OccurredAt <= cutoff).Select(Deserialize).ToList();
     }
 
     public Task<bool> HasProcessedAsync(Guid commandId, CancellationToken ct) =>
-        db.Events.AnyAsync(e => e.CommandId == commandId, ct);
+        db.ProcessedCommands.AnyAsync(c => c.CommandId == commandId, ct);
 
     public async Task AppendAsync(string streamId, int expectedVersion, Guid commandId,
         IReadOnlyList<IDomainEvent> events, CancellationToken ct)
@@ -49,7 +47,17 @@ public sealed class EfEventStore(EventStoreDbContext db) : IEventStore
                 CommandId = commandId,
             });
         }
-        await db.SaveChangesAsync(ct);
+        db.ProcessedCommands.Add(new ProcessedCommand { CommandId = commandId });
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            // Don't let the failed rows ride along with the next append in this scope.
+            db.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     private static IDomainEvent Deserialize(StoredEvent row) =>

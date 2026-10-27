@@ -9,12 +9,14 @@ public sealed class DepthChartCommandHandler(IEventStore store)
 {
     public async Task HandleAsync(DepthChartCommand command, DateTimeOffset occurredAt, CancellationToken ct)
     {
+        // A missing "commandId" deserialises to Guid.Empty and would collide with every other id-less command.
+        if (command.CommandId == Guid.Empty) throw new DomainValidationException("CommandId is required.");
         if (await store.HasProcessedAsync(command.CommandId, ct)) return;
 
         var sport = new Sport(command.Sport);
         var team = new Team(command.Team);
         var position = new Position(command.Position);
-        // Build everything up front so invalid input never touches the store.
+        // Value types are built before loading; chart invariants are checked before anything is appended.
         Func<DepthChart, IReadOnlyList<IDomainEvent>> execute = command switch
         {
             AddPlayerCommand add => AddPlayer(add, position, occurredAt),
@@ -25,8 +27,8 @@ public sealed class DepthChartCommandHandler(IEventStore store)
         var streamId = DepthChart.StreamIdFor(sport, team);
         var chart = DepthChart.Replay(sport, team, await store.LoadAsync(streamId, null, ct));
         var events = execute(chart);
-        if (events.Count > 0)
-            await store.AppendAsync(streamId, chart.Version, command.CommandId, events, ct);
+        // Appended even when empty so a no-op is still recorded as processed and not replayed on redelivery.
+        await store.AppendAsync(streamId, chart.Version, command.CommandId, events, ct);
     }
 
     private static Func<DepthChart, IReadOnlyList<IDomainEvent>> AddPlayer(

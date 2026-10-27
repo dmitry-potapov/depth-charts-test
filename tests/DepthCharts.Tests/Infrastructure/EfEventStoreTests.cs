@@ -1,6 +1,9 @@
 using DepthCharts.Application.Abstractions;
 using DepthCharts.Domain;
 using DepthCharts.Domain.Events;
+using DepthCharts.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace DepthCharts.Tests.Infrastructure;
 
@@ -96,6 +99,57 @@ public class EfEventStoreTests
 
         Assert.True(await store.HasProcessedAsync(id, default));
         Assert.False(await store.HasProcessedAsync(Guid.NewGuid(), default));
+    }
+
+    [Fact]
+    public async Task Load_AsOfWithOutOfOrderTimestamps_ReturnsPrefix()
+    {
+        var store = TestStore.Create();
+        await store.AppendAsync("nfl:tb", 0, Guid.NewGuid(), [Added(1, null, T0.AddMinutes(5)), Added(2, null, T0)], default);
+
+        Assert.Empty(await store.LoadAsync("nfl:tb", T0.AddMinutes(2), default));
+    }
+
+    [Fact]
+    public async Task Append_NoEvents_StillMarksProcessed()
+    {
+        var store = TestStore.Create();
+        var id = Guid.NewGuid();
+
+        await store.AppendAsync("nfl:tb", 0, id, [], default);
+
+        Assert.True(await store.HasProcessedAsync(id, default));
+        Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
+    }
+
+    [Fact]
+    public async Task Append_AfterFailedSave_DoesNotWriteStaleRows()
+    {
+        var options = new DbContextOptionsBuilder<EventStoreDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .AddInterceptors(new FailOnceInterceptor())
+            .Options;
+        var store = new EfEventStore(new EventStoreDbContext(options));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.AppendAsync("nfl:tb", 0, Guid.NewGuid(), [Added(1, null, T0)], default));
+
+        await store.AppendAsync("nfl:tb", 0, Guid.NewGuid(), [Added(2, null, T0)], default);
+
+        var only = Assert.IsType<PlayerAddedToDepthChart>(Assert.Single(await store.LoadAsync("nfl:tb", null, default)));
+        Assert.Equal(2, only.Player.Id);
+    }
+
+    private sealed class FailOnceInterceptor : SaveChangesInterceptor
+    {
+        private bool _failed;
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken ct = default)
+        {
+            if (_failed) return base.SavingChangesAsync(eventData, result, ct);
+            _failed = true;
+            throw new InvalidOperationException("boom");
+        }
     }
 
     private static async Task<IEventStore> ThreeEvents()

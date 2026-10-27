@@ -50,7 +50,54 @@ public class DepthChartCommandHandlerTests
         await new DepthChartCommandHandler(store).HandleAsync(new RemovePlayerCommand(id, "nfl", "tb", "WR", 1), T0, default);
 
         Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
-        Assert.False(await store.HasProcessedAsync(id, default));
+        Assert.True(await store.HasProcessedAsync(id, default));
+    }
+
+    [Fact]
+    public async Task Handle_RedeliveredNoOpRemove_DoesNotRemoveLaterAddedPlayer()
+    {
+        var store = TestStore.Create();
+        var handler = new DepthChartCommandHandler(store);
+        var remove = new RemovePlayerCommand(Guid.NewGuid(), "nfl", "tb", "WR", 1);
+        var add = Add();
+        await handler.HandleAsync(remove, T0, default);
+        await handler.HandleAsync(add, T0, default);
+
+        await handler.HandleAsync(remove, T0, default);
+        await handler.HandleAsync(add, T0, default);
+
+        var chart = DepthChart.Replay(new Sport("nfl"), new Team("tb"), await store.LoadAsync("nfl:tb", null, default));
+        Assert.Single(chart.GetFullChart());
+    }
+
+    [Fact]
+    public async Task Handle_EmptyCommandId_Rejected()
+    {
+        var store = TestStore.Create();
+        var handler = new DepthChartCommandHandler(store);
+
+        await Assert.ThrowsAsync<DomainValidationException>(() => handler.HandleAsync(Add(Guid.Empty), T0, default));
+
+        Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
+        Assert.False(await store.HasProcessedAsync(Guid.Empty, default));
+    }
+
+    [Fact]
+    public async Task Handle_InvalidRemoveOrDepth_ThrowsAndRecordsNothing()
+    {
+        var store = TestStore.Create();
+        var handler = new DepthChartCommandHandler(store);
+        var removeId = Guid.NewGuid();
+        var addId = Guid.NewGuid();
+
+        await Assert.ThrowsAsync<DomainValidationException>(() =>
+            handler.HandleAsync(new RemovePlayerCommand(removeId, "nfl", "tb", "WR", 0), T0, default));
+        await Assert.ThrowsAsync<DomainValidationException>(() =>
+            handler.HandleAsync(new AddPlayerCommand(addId, "nfl", "tb", "WR", 1, "Bob", null, -1), T0, default));
+
+        Assert.False(await store.HasProcessedAsync(removeId, default));
+        Assert.False(await store.HasProcessedAsync(addId, default));
+        Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
     }
 
     [Fact]
