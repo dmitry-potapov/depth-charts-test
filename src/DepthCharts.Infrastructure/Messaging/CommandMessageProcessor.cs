@@ -10,8 +10,13 @@ namespace DepthCharts.Infrastructure.Messaging;
 public sealed class CommandMessageProcessor(IServiceScopeFactory scopes, ILogger<CommandMessageProcessor> logger)
 {
     // No retry, no DLQ: a bad message is logged and skipped so later ones still apply.
-    public async Task ProcessAsync(string json, DateTimeOffset timestamp, CancellationToken ct)
+    public async Task ProcessAsync(string? json, DateTimeOffset timestamp, CancellationToken ct)
     {
+        if (json is null) // tombstone
+        {
+            logger.LogWarning("Skipping empty command message");
+            return;
+        }
         try
         {
             var command = CommandSerializer.Deserialize(json);

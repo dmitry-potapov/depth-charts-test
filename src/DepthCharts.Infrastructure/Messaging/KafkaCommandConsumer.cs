@@ -28,12 +28,39 @@ public sealed class KafkaCommandConsumer(
         consumer.Subscribe(o.Topic);
         try
         {
+            await LoopAsync(consumer.Consume, ct);
+        }
+        finally
+        {
+            consumer.Close();
+        }
+    }
+
+    // Kafka timestamps become event OccurredAt, so replays must be deterministic: never fall back to "now".
+    public static DateTimeOffset? ToOccurredAt(Timestamp timestamp) =>
+        timestamp.Type == TimestampType.NotAvailable ? null : timestamp.UtcDateTime;
+
+    public async Task LoopAsync(Func<CancellationToken, ConsumeResult<string, string>> consume, CancellationToken ct)
+    {
+        try
+        {
             while (!ct.IsCancellationRequested)
             {
                 try
                 {
-                    var msg = consumer.Consume(ct);
-                    await processor.ProcessAsync(msg.Message.Value, msg.Message.Timestamp.UtcDateTime, ct);
+                    var msg = consume(ct);
+                    if (ToOccurredAt(msg.Message.Timestamp) is not { } occurredAt)
+                    {
+                        logger.LogWarning("Skipping message without a Kafka timestamp at {Offset}", msg.TopicPartitionOffset);
+                        continue;
+                    }
+                    await processor.ProcessAsync(msg.Message.Value, occurredAt, ct);
+                }
+                catch (ConsumeException e) when (e.Error.IsFatal)
+                {
+                    // Unrecoverable: let the host stop rather than serve a chart that never updates.
+                    logger.LogCritical(e, "Fatal Kafka error");
+                    throw;
                 }
                 catch (ConsumeException e)
                 {
@@ -42,9 +69,5 @@ public sealed class KafkaCommandConsumer(
             }
         }
         catch (OperationCanceledException) { }
-        finally
-        {
-            consumer.Close();
-        }
     }
 }

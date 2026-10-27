@@ -79,6 +79,16 @@ public class CommandMessageProcessorTests
     }
 
     [Fact]
+    public async Task Process_NullValue_LogsWarningNotError()
+    {
+        var (processor, _, logger) = Create();
+
+        await processor.ProcessAsync(null, T0, default);
+
+        Assert.Equal(LogLevel.Warning, Assert.Single(logger.Levels));
+    }
+
+    [Fact]
     public async Task Process_InvalidDomainValue_LogsWarningAndSkips()
     {
         var (processor, store, logger) = Create();
