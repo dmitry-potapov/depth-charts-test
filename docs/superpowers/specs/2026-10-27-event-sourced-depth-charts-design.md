@@ -27,7 +27,7 @@ Brief item 5 says not to spend effort on a database-backed solution. Persistence
 | Kafka role | Kafka carries **commands** only. The EF event store is the source of truth. |
 | Reads | The Processor exposes REST endpoints and the Producer calls them. |
 | Aggregate | One `DepthChart` per team, keyed by `(sport, team)`. |
-| Sports and positions | **Not restricted.** Sport and position are free-form identifiers, so adding a sport takes no code. NFL and MLB work because nothing blocks them. |
+| Sports and positions | **Not restricted to a list.** Sport (letters and digits) and position are free-form identifiers, so adding a sport takes no code. NFL and MLB work because nothing blocks them. |
 
 ## 2. Solution structure
 
@@ -49,7 +49,7 @@ The dependency direction is Domain ← Application ← Infrastructure ← Api/Pr
 
 Each value type enforces its own invariants and throws in its constructor.
 
-- `Sport`: a non-empty string, trimmed and upper-cased (`NFL`, `MLB`, …).
+- `Sport`: a non-empty string, trimmed and upper-cased (`NFL`, `MLB`, …). It may contain only `[A-Z0-9]`, because it is part of the stream id.
 - `Position`: a non-empty string, trimmed and upper-cased (`WR`, `1B`, …). It is not checked against the sport.
 - `Team`: a non-empty string, trimmed and lower-cased. It may contain only `[a-z0-9-]`, which keeps `:` out of stream ids so they can't collide.
 - `Player(int Id, string Name, Position? NaturalPosition)`: the id must be positive and the name non-empty. The natural position is informational only, because a player may appear on any position's chart.
@@ -73,10 +73,13 @@ Commands are methods that validate and return new events. They do not mutate sta
   - If the player is not on that chart, nothing happens and no event is emitted.
   - Otherwise emits `PlayerRemovedFromDepthChart(Sport, Team, int PlayerId, Position, OccurredAt)`.
 - `Apply(event)` mutates state. Replaying a stream means calling `Apply` for each event in order.
+  - An event whose `Sport` or `Team` differs from the chart's, or of an unknown type, throws `InvalidOperationException` and leaves the state unchanged.
+  - A recorded depth outside `0..count` is clamped, so a filtered or corrupt stream can't lose players.
+  - Adding a player replaces their stored name at every position they hold, so the latest event wins.
 
 Queries are pure reads of the state:
 
-- `GetFullChart()` returns `IReadOnlyDictionary<Position, IReadOnlyList<Player>>`.
+- `GetFullChart()` returns `IReadOnlyDictionary<Position, IReadOnlyList<Player>>`. Positions appear in the order they were first added, and positions with no players are left out.
 - `GetPlayersUnder(int playerId, Position)` returns the players after this one in the list, or `[]` if the player or position is absent. A non-positive `playerId` throws.
 
 ### Events
@@ -84,7 +87,7 @@ Queries are pure reads of the state:
 Events are immutable records that implement `IDomainEvent { Sport Sport; Team Team; DateTimeOffset OccurredAt }`.
 
 - Each event records the **resolved** depth, so replaying it is deterministic and never re-runs the defaulting rules.
-- Each event carries its own `Sport` and `Team`, so history can later be filtered by team without parsing stream ids. `Apply` ignores both fields, because the aggregate already knows its identity.
+- Each event carries its own `Sport` and `Team`, so history can later be filtered by team without parsing stream ids. `Apply` checks both against the chart's identity and rejects a mismatch, so a wrong stream can't silently build the wrong team's chart.
 
 ## 4. Application
 
@@ -189,7 +192,7 @@ The README documents these steps and the assumptions in §3.
 
 | Layer | Tests |
 |---|---|
-| Domain | Emitted events carry the chart's `Sport` and `Team`. `Team` rejects empty values and `:`. The brief's example end to end. Insert-and-bump. Null depth and depth past the end both append. A negative depth throws. Moving a player within a position. Removing a player who is absent emits no event. `GetPlayersUnder` for the last player, an absent player and an absent position. The same player on several positions. MLB positions such as `1B`. Value-type invariants, and a non-positive player id throws in `Player`, `RemovePlayer` and `GetPlayersUnder`. |
+| Domain | Emitted events carry the chart's `Sport` and `Team`. `Team` rejects empty values and `:`; `Sport` rejects anything but letters and digits. `Apply` rejects another team's events, clamps an out-of-range depth, and updates a re-added player's name on every position. Empty positions are left out of the full chart. The brief's example end to end. Insert-and-bump. Null depth and depth past the end both append. A negative depth throws. Moving a player within a position. Removing a player who is absent emits no event. `GetPlayersUnder` for the last player, an absent player and an absent position. The same player on several positions. MLB positions such as `1B`. Value-type invariants, and a non-positive player id throws in `Player`, `RemovePlayer` and `GetPlayersUnder`. |
 | Event sourcing | Replaying the emitted events rebuilds an equal state. Loading with `asOf` between events gives the earlier chart. |
 | Application + EF store | A handler appends events. A duplicate `CommandId` is ignored. A stale `expectedVersion` throws `ConcurrencyException`. A no-op remove appends nothing. |
 | Api | `WebApplicationFactory` with `Kafka:ConsumerEnabled=false`, the store seeded through the handler: chart, below, `asOf`, and 400 cases. |

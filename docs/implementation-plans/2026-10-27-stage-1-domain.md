@@ -16,7 +16,7 @@
 - Value types throw `DomainValidationException` in their constructor on invalid input.
 - `Sport`, `Position`: non-empty, trimmed, upper-cased. `Team`: non-empty, trimmed, lower-cased, only `[a-z0-9-]`. `Player.Id`: positive int (no wrapper type). `Player.Name`: non-empty.
 - Stream id: `"{sport}:{team}"` in lower case, e.g. `nfl:tb`.
-- Events record the **resolved** depth and carry `Sport` and `Team`; `Apply` ignores those two fields.
+- Events record the **resolved** depth and carry `Sport` and `Team`; `Apply` throws `InvalidOperationException` when they differ from the chart's.
 - Positions are free-form; nothing is checked against the sport.
 - Before calling the stage done: `dotnet build` and `dotnet test` both pass.
 

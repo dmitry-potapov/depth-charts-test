@@ -177,7 +177,7 @@ git commit -m "feat(producer): add chart, below and demo verbs"
 **Files:**
 - Modify: `README.md` (currently empty)
 
-- [ ] **Step 1: Write `README.md`** with: what it is (one paragraph), prerequisites (.NET 10 SDK, Docker), the three run commands of spec §8, the CLI grammar of §7 with one example per verb, the two endpoints of §6, `dotnet build` / `dotnet test`, the assumptions of §3 (free-form sport/position, normalisation rules, `Team` charset, insert-and-bump and move semantics, natural position informational only), and the limits of §11.
+- [ ] **Step 1: Write `README.md`** with: what it is (one paragraph), prerequisites (.NET 10 SDK, Docker), the three run commands of spec §8, the CLI grammar of §7 with one example per verb, the two endpoints of §6, `dotnet build` / `dotnet test`, the assumptions of §3 (free-form sport/position, normalisation rules, `Sport` and `Team` charsets, insert-and-bump and move semantics, natural position informational only), and the limits of §11.
 - [ ] **Step 2: Manual end-to-end:**
 ```bash
 docker compose up -d
