@@ -47,7 +47,9 @@ gate() {
 
 EDIT=(--permission-mode acceptEdits
       --allowedTools "Bash(dotnet build:*)" "Bash(dotnet test:*)" "Bash(dotnet ef:*)" "Bash(dotnet tool restore)"
-                     "Bash(git status)" "Bash(git rm:*)" "Bash(git diff:*)" "Bash(git add:*)" "Bash(git commit:*)")
+                     "Bash(dotnet sln:*)" "Bash(dotnet add:*)"
+                     "Bash(git status)" "Bash(git log:*)" "Bash(git grep:*)" "Bash(git mv:*)" "Bash(git rm:*)"
+                     "Bash(git diff:*)" "Bash(git add:*)" "Bash(git commit:*)")
 READONLY=(--allowedTools Read Grep Glob "Bash(git diff:*)" "Bash(git log:*)" --disallowedTools Edit Write)
 
 # True if step $1 is at or after FROM, i.e. it should run this time.
