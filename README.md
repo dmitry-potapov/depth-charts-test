@@ -1,6 +1,6 @@
 # Depth Charts
 
-Event-sourced sports depth charts on .NET 10 (Clean Architecture). Only the Domain layer is implemented so far; there are no use cases, endpoints or configuration yet.
+Event-sourced sports depth charts on .NET 10 (Clean Architecture). The Domain and Application layers and an in-memory event store are implemented so far; there are no endpoints, Kafka or configuration yet.
 
 ## Domain rules
 
@@ -23,6 +23,27 @@ Value types normalise their input and throw `DomainValidationException` when it 
 - `GetFullChart` lists the positions in the order they were first added and leaves out empty ones.
 - `GetPlayersUnder` returns the players below the given player at a position, or an empty list if the player is not there.
 
+## Use cases
+
+Commands are `AddPlayerCommand` and `RemovePlayerCommand`. `CommandSerializer` reads and writes them as JSON with camelCase names and a `type` discriminator (`add-player` / `remove-player`) that may appear anywhere in the object. A missing or unknown `type` throws `JsonException`.
+
+`DepthChartCommandHandler.HandleAsync(command, occurredAt, ct)`:
+
+1. Rejects an empty `CommandId`, and returns without doing anything if the command was already processed.
+2. Builds the value types; invalid input throws `DomainValidationException` and records nothing.
+3. Replays the stream, runs the command, and always calls `AppendAsync` with the replayed version, even with no events, so a no-op is still recorded as processed and a redelivery is ignored.
+4. If the stream moved on, `AppendAsync` throws `ConcurrencyException` and records nothing, so the command stays retryable.
+
+`DepthChartQueryHandler` has `GetFullChartAsync` and `GetPlayersUnderAsync`. Each takes an optional `AsOf`, replays the stream up to that time and reads the result. An unknown team gives empty results.
+
+`AddApplication()` and `AddInfrastructure(configuration)` register the handlers and the store.
+
+## Event store
+
+`EfEventStore` implements `IEventStore` on EF Core InMemory. Events are stored as JSON rows with a per-stream `Version`; a separate `ProcessedCommands` table holds one row per handled command, including no-ops. `LoadAsync` with `asOf` returns the version-ordered events up to the first one later than `asOf`. Each service provider gets its own in-memory database.
+
+The InMemory provider enforces no unique index or transaction, so this is only correct with a single sequential consumer. A real deployment needs a relational provider with unique `(StreamId, Version)` and unique `ProcessedCommand.CommandId`.
+
 ## Commands
 
 ```sh
@@ -32,4 +53,4 @@ dotnet test
 
 ## Testing
 
-xUnit tests are in `tests/DepthCharts.Tests`. `Domain/` covers the value types, the `DepthChart` commands and queries, and replay.
+xUnit tests are in `tests/DepthCharts.Tests`. `Domain/` covers the value types, the `DepthChart` commands and queries, and replay. `Application/` covers the command serializer and the command and query handlers (idempotency, no-op and stale-version cases, `asOf`). `Infrastructure/` covers `EfEventStore` and the DI registration. `TestStore.Create()` gives a fresh in-memory store.
