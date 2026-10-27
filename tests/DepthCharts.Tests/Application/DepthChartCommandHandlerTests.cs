@@ -18,7 +18,7 @@ public class DepthChartCommandHandlerTests
     {
         var store = TestStore.Create();
 
-        await new DepthChartCommandHandler(store).HandleAsync(Add(), T0, default);
+        await new DepthChartCommandHandler(store, TestStore.Sports()).HandleAsync(Add(), T0, default);
 
         var added = Assert.IsType<PlayerAddedToDepthChart>(Assert.Single(await store.LoadAsync("nfl:tb", null, default)));
         Assert.Equal(T0, added.OccurredAt);
@@ -28,7 +28,7 @@ public class DepthChartCommandHandlerTests
     public async Task Handle_DuplicateCommandId_Ignored()
     {
         var store = TestStore.Create();
-        var handler = new DepthChartCommandHandler(store);
+        var handler = new DepthChartCommandHandler(store, TestStore.Sports());
         var addId = Guid.NewGuid();
         await handler.HandleAsync(Add(addId), T0, default);
         await handler.HandleAsync(new RemovePlayerCommand(Guid.NewGuid(), "nfl", "TB", "WR", 1), T0, default);
@@ -47,7 +47,7 @@ public class DepthChartCommandHandlerTests
         var store = TestStore.Create();
         var id = Guid.NewGuid();
 
-        await new DepthChartCommandHandler(store).HandleAsync(new RemovePlayerCommand(id, "nfl", "tb", "WR", 1), T0, default);
+        await new DepthChartCommandHandler(store, TestStore.Sports()).HandleAsync(new RemovePlayerCommand(id, "nfl", "tb", "WR", 1), T0, default);
 
         Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
         Assert.True(await store.HasProcessedAsync(id, default));
@@ -57,7 +57,7 @@ public class DepthChartCommandHandlerTests
     public async Task Handle_RedeliveredNoOpRemove_DoesNotRemoveLaterAddedPlayer()
     {
         var store = TestStore.Create();
-        var handler = new DepthChartCommandHandler(store);
+        var handler = new DepthChartCommandHandler(store, TestStore.Sports());
         var remove = new RemovePlayerCommand(Guid.NewGuid(), "nfl", "tb", "WR", 1);
         var add = Add();
         await handler.HandleAsync(remove, T0, default);
@@ -74,7 +74,7 @@ public class DepthChartCommandHandlerTests
     public async Task Handle_EmptyCommandId_Rejected()
     {
         var store = TestStore.Create();
-        var handler = new DepthChartCommandHandler(store);
+        var handler = new DepthChartCommandHandler(store, TestStore.Sports());
 
         await Assert.ThrowsAsync<DomainValidationException>(() => handler.HandleAsync(Add(Guid.Empty), T0, default));
 
@@ -86,7 +86,7 @@ public class DepthChartCommandHandlerTests
     public async Task Handle_InvalidRemoveOrDepth_ThrowsAndRecordsNothing()
     {
         var store = TestStore.Create();
-        var handler = new DepthChartCommandHandler(store);
+        var handler = new DepthChartCommandHandler(store, TestStore.Sports());
         var removeId = Guid.NewGuid();
         var addId = Guid.NewGuid();
 
@@ -104,10 +104,50 @@ public class DepthChartCommandHandlerTests
     public async Task Handle_InvalidInput_ThrowsDomainValidation()
     {
         var store = TestStore.Create();
-        var handler = new DepthChartCommandHandler(store);
+        var handler = new DepthChartCommandHandler(store, TestStore.Sports());
 
         await Assert.ThrowsAsync<DomainValidationException>(() => handler.HandleAsync(Add(team: "t:b"), T0, default));
         await Assert.ThrowsAsync<DomainValidationException>(() => handler.HandleAsync(Add(playerId: 0), T0, default));
+
+        Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
+    }
+
+    private static AddPlayerCommand AddAt(string sport, string position) =>
+        new(Guid.NewGuid(), sport, "tb", position, 1, "Bob", null, null);
+
+    [Fact]
+    public async Task Handle_PositionNotAllowedForSport_ThrowsAndRecordsNothing()
+    {
+        var store = TestStore.Create();
+        var command = AddAt("NFL", "SS");
+
+        await Assert.ThrowsAsync<DomainValidationException>(
+            () => new DepthChartCommandHandler(store, TestStore.Sports()).HandleAsync(command, T0, default));
+
+        Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
+        Assert.False(await store.HasProcessedAsync(command.CommandId, default));
+    }
+
+    [Theory]
+    [InlineData("MLB", "ss")]
+    [InlineData("nfl", "qb")]
+    [InlineData("NHL", "anything")] // no registry row: any position
+    public async Task Handle_AllowedOrUnregisteredPosition_Appends(string sport, string position)
+    {
+        var store = TestStore.Create();
+
+        await new DepthChartCommandHandler(store, TestStore.Sports()).HandleAsync(AddAt(sport, position), T0, default);
+
+        Assert.Single(await store.LoadAsync($"{sport.ToLowerInvariant()}:tb", null, default));
+    }
+
+    [Fact]
+    public async Task Handle_Remove_SkipsPositionCheck()
+    {
+        var store = TestStore.Create();
+
+        await new DepthChartCommandHandler(store, TestStore.Sports())
+            .HandleAsync(new RemovePlayerCommand(Guid.NewGuid(), "NFL", "tb", "SS", 1), T0, default);
 
         Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
     }
@@ -116,7 +156,7 @@ public class DepthChartCommandHandlerTests
     public async Task Handle_DifferentCasing_SameStream()
     {
         var store = TestStore.Create();
-        var handler = new DepthChartCommandHandler(store);
+        var handler = new DepthChartCommandHandler(store, TestStore.Sports());
 
         await handler.HandleAsync(Add(sport: "nfl", team: "TB"), T0, default);
         await handler.HandleAsync(Add(sport: "NFL", team: "tb", playerId: 2, name: "Alice"), T0, default);
@@ -128,9 +168,9 @@ public class DepthChartCommandHandlerTests
     public async Task Handle_StaleVersion_PropagatesConcurrencyException()
     {
         var real = TestStore.Create();
-        await new DepthChartCommandHandler(real).HandleAsync(Add(), T0, default);
+        await new DepthChartCommandHandler(real, TestStore.Sports()).HandleAsync(Add(), T0, default);
 
-        var handler = new DepthChartCommandHandler(new StaleLoadStore(real));
+        var handler = new DepthChartCommandHandler(new StaleLoadStore(real), TestStore.Sports());
 
         var losing = Add(playerId: 2, name: "Alice");
         await Assert.ThrowsAsync<ConcurrencyException>(() => handler.HandleAsync(losing, T0, default));

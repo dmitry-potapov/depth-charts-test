@@ -5,7 +5,7 @@ using DepthCharts.Domain.Events;
 
 namespace DepthCharts.Application;
 
-public sealed class DepthChartCommandHandler(IEventStore store)
+public sealed class DepthChartCommandHandler(IEventStore store, ISportRegistry sports)
 {
     public async Task HandleAsync(DepthChartCommand command, DateTimeOffset occurredAt, CancellationToken ct)
     {
@@ -23,6 +23,10 @@ public sealed class DepthChartCommandHandler(IEventStore store)
             RemovePlayerCommand remove => chart => chart.RemovePlayer(remove.PlayerId, position, occurredAt),
             _ => throw new InvalidOperationException($"Unknown command type {command.GetType().Name}."),
         };
+
+        if (command is AddPlayerCommand
+            && await sports.GetAllowedPositionsAsync(sport, ct) is { } allowed && !allowed.Contains(position))
+            throw new DomainValidationException($"Position {position} is not allowed for {sport}.");
 
         var streamId = DepthChart.StreamIdFor(sport, team);
         var chart = DepthChart.Replay(sport, team, await store.LoadAsync(streamId, null, ct));

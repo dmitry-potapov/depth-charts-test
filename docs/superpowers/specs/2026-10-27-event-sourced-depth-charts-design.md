@@ -141,6 +141,10 @@ Each one loads the stream with `asOf`, replays it, and reads the result. A strea
 - `AppendAsync` checks in code that the stream's current max version equals `expectedVersion`. If it doesn't, the call throws a `ConcurrencyException` and records nothing, so the command stays retryable. Otherwise it writes the events as versions `expectedVersion+1 …` and the `ProcessedCommand` row in the same `SaveChangesAsync`.
 - `shortcut:` the InMemory provider enforces neither unique indexes nor transactions. Correctness relies on the single, sequential consumer described in §5.2. To upgrade, move to a relational provider with a unique `(StreamId, Version)` index and a unique `ProcessedCommand.CommandId`. Keep the processed-commands table, or a redelivered no-op command would run again.
 
+### Sport position registry
+
+`SportDefinition` (`Sport` key, optional JSON list `AllowedPositions`) is stored in the same EF context. `EfSportRegistry` implements `ISportRegistry` (Application). `AddPlayerCommand` is rejected with `DomainValidationException` before anything is appended when the sport lists positions and the position is not among them. A null or empty list, or a sport with no row, allows any position; managing sports would be a separate feature. NFL and MLB (the brief's positions) are seeded with `HasData` and created by `EnsureCreatedAsync` at Api startup, because the InMemory provider has no migrations. Remove commands are not checked.
+
 ### Kafka
 
 - Topic: `depth-chart-commands`. It is created by the compose file or auto-created.

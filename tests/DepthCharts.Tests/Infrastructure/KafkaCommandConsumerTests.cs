@@ -31,6 +31,7 @@ public class KafkaCommandConsumerTests
         services.AddLogging();
         services.AddApplication();
         services.AddSingleton(store);
+        services.AddSingleton<ISportRegistry>(TestStore.Sports());
         var sp = services.BuildServiceProvider();
         var processor = new CommandMessageProcessor(
             sp.GetRequiredService<IServiceScopeFactory>(), new ListLogger<CommandMessageProcessor>());

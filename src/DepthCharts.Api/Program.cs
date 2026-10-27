@@ -11,6 +11,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 var app = builder.Build();
 app.UseExceptionHandler();
 app.MapDepthChartEndpoints();
+await app.Services.EnsureDatabaseCreatedAsync();
 app.Run();
 
 public partial class Program;

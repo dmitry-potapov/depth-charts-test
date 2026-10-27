@@ -51,6 +51,7 @@ public class CommandMessageProcessorTests
         services.AddLogging();
         services.AddApplication();
         services.AddSingleton(store);
+        services.AddSingleton<ISportRegistry>(TestStore.Sports());
         var sp = services.BuildServiceProvider();
         return (new CommandMessageProcessor(sp.GetRequiredService<IServiceScopeFactory>(), logger), store, logger);
     }

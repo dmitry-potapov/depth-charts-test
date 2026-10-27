@@ -51,7 +51,7 @@ producer demo
 
 ## Assumptions
 
-- Sport and position are free-form (any sport, e.g. MLB `1B`). Sport is upper-cased and limited to letters and digits; team is lower-cased and limited to letters, digits and `-`; position is trimmed and upper-cased.
+- A sport may list its allowed positions (`SportDefinition.AllowedPositions`). NFL (QB, WR, RB, TE, K, P, KR, PR) and MLB (SP, RP, C, 1B, 2B, 3B, SS, LF, RF, CF, DH) are seeded from the brief; adding a player at another position for them is rejected. A sport with no row, or a null or empty list, accepts any position. Managing sports is out of scope. Sport is upper-cased and limited to letters and digits; team is lower-cased and limited to letters, digits and `-`; position is trimmed and upper-cased.
 - Adding at an occupied depth inserts the player there and bumps everyone below down one place. A player already at that position is moved, with the depth resolved without them.
 - A player's natural position is informational only; they can be added to any position.
 
@@ -89,7 +89,7 @@ Commands are `AddPlayerCommand` and `RemovePlayerCommand`. `CommandSerializer` r
 `DepthChartCommandHandler.HandleAsync(command, occurredAt, ct)`:
 
 1. Rejects an empty `CommandId`, and returns without doing anything if the command was already processed.
-2. Builds the value types; invalid input throws `DomainValidationException` and records nothing.
+2. Builds the value types; invalid input, or an add at a position the sport does not allow (`ISportRegistry`), throws `DomainValidationException` and records nothing.
 3. Replays the stream, runs the command, and always calls `AppendAsync` with the replayed version, even with no events, so a no-op is still recorded as processed and a redelivery is ignored.
 4. If the stream moved on, `AppendAsync` throws `ConcurrencyException` and records nothing, so the command stays retryable.
 
@@ -109,7 +109,7 @@ Commands are `AddPlayerCommand` and `RemovePlayerCommand`. `CommandSerializer` r
 
 ## Event store
 
-`EfEventStore` implements `IEventStore` on EF Core InMemory. Events are stored as JSON rows with a per-stream `Version`; a separate `ProcessedCommands` table holds one row per handled command, including no-ops. `LoadAsync` with `asOf` returns the version-ordered events up to the first one later than `asOf`. Each service provider gets its own in-memory database.
+`EfEventStore` implements `IEventStore` on EF Core InMemory. Events are stored as JSON rows with a per-stream `Version`; a `Sports` table holds each sport's optional allowed positions (seeded with `HasData`; `EnsureCreatedAsync` runs at Api startup because InMemory has no migrations), and a separate `ProcessedCommands` table holds one row per handled command, including no-ops. `LoadAsync` with `asOf` returns the version-ordered events up to the first one later than `asOf`. Each service provider gets its own in-memory database.
 
 The InMemory provider enforces no unique index or transaction, so this is only correct with a single sequential consumer. A real deployment needs a relational provider with unique `(StreamId, Version)` and unique `ProcessedCommand.CommandId`.
 
@@ -141,4 +141,4 @@ dotnet run --project src/DepthCharts.Producer -- <verb> ...
 
 ## Testing
 
-xUnit tests are in `tests/DepthCharts.Tests`. `Domain/` covers the value types, the `DepthChart` commands and queries, and replay. `Application/` covers the command serializer and the command and query handlers (idempotency, no-op and stale-version cases, `asOf`). `Infrastructure/` covers `EfEventStore`, the DI registration, `CommandMessageProcessor` (applied, skipped and logged messages, cancellation) and `KafkaCommandConsumer`'s loop with a fake `consume` function (timestamps, consume errors, the disabled switch). No test needs a running broker. `Api/` calls the endpoints through `WebApplicationFactory`. `ApiFactory` turns the consumer off, and `ApiFactory.SeedAsync` records commands before each call. These tests cover the response shape, empty results, `asOf` formats and 400s. `TestStore.Create()` gives a fresh in-memory store. `Producer/` covers CLI parsing and validation, chart formatting, the Api client's URIs (including the escaped `asOf`) and JSON, `DemoRunner` (fresh team per run, timeout, caller cancellation) and `ProducerApp` (verb routing, exit codes and stderr for usage errors, Ctrl+C, timeouts, Kafka/HTTP failures, non-JSON responses and bad config). `Infrastructure/KafkaCommandPublisherTests` covers the message key and DI registration; `KafkaCommandPublisherProduceTests` uses a fake `IProducer` to check the topic, key and value, that an already-cancelled publish sends nothing, and that idempotence is on. Only the end-to-end run against a real broker is checked manually with Docker.
+xUnit tests are in `tests/DepthCharts.Tests`. `Domain/` covers the value types, the `DepthChart` commands and queries, and replay. `Application/` covers the command serializer and the command and query handlers (idempotency, no-op and stale-version cases, `asOf`). `Infrastructure/` covers `EfEventStore`, `EfSportRegistry` (seeded NFL/MLB, any-position cases), the DI registration, `CommandMessageProcessor` (applied, skipped and logged messages, cancellation) and `KafkaCommandConsumer`'s loop with a fake `consume` function (timestamps, consume errors, the disabled switch). No test needs a running broker. `Api/` calls the endpoints through `WebApplicationFactory`. `ApiFactory` turns the consumer off, and `ApiFactory.SeedAsync` records commands before each call. These tests cover the response shape, empty results, `asOf` formats and 400s. `TestStore.Create()` gives a fresh in-memory store. `Producer/` covers CLI parsing and validation, chart formatting, the Api client's URIs (including the escaped `asOf`) and JSON, `DemoRunner` (fresh team per run, timeout, caller cancellation) and `ProducerApp` (verb routing, exit codes and stderr for usage errors, Ctrl+C, timeouts, Kafka/HTTP failures, non-JSON responses and bad config). `Infrastructure/KafkaCommandPublisherTests` covers the message key and DI registration; `KafkaCommandPublisherProduceTests` uses a fake `IProducer` to check the topic, key and value, that an already-cancelled publish sends nothing, and that idempotence is on. Only the end-to-end run against a real broker is checked manually with Docker.

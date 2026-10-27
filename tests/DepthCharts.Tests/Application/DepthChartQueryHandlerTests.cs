@@ -14,7 +14,7 @@ public class DepthChartQueryHandlerTests
     private static (DepthChartQueryHandler Query, DepthChartCommandHandler Command) Handlers()
     {
         var store = TestStore.Create();
-        return (new DepthChartQueryHandler(store), new DepthChartCommandHandler(store));
+        return (new DepthChartQueryHandler(store), new DepthChartCommandHandler(store, TestStore.Sports()));
     }
 
     private static async Task SeedBriefExample(DepthChartCommandHandler command)

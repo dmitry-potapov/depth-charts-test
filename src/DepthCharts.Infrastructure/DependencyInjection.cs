@@ -17,10 +17,18 @@ public static class DependencyInjection
         services.AddDbContext<EventStoreDbContext>((sp, o) =>
             o.UseInMemoryDatabase("depth-charts", sp.GetRequiredService<InMemoryDatabaseRoot>()));
         services.AddScoped<IEventStore, EfEventStore>();
+        services.AddScoped<ISportRegistry, EfSportRegistry>();
         services.Configure<KafkaOptions>(configuration.GetSection("Kafka"));
         services.AddSingleton<CommandMessageProcessor>();
         services.AddHostedService<KafkaCommandConsumer>();
         return services;
+    }
+
+    // Creates the in-memory database so the seeded sports exist before the consumer starts.
+    public static async Task EnsureDatabaseCreatedAsync(this IServiceProvider services, CancellationToken ct = default)
+    {
+        using var scope = services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<EventStoreDbContext>().Database.EnsureCreatedAsync(ct);
     }
 
     // For the Producer CLI: publishing only, no store or consumer.

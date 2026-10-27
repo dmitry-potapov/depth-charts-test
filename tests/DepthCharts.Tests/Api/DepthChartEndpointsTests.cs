@@ -13,6 +13,11 @@ public class DepthChartEndpointsTests(ApiFactory factory) : IClassFixture<ApiFac
     private static AddPlayerCommand Add(string team, int id, string name, string position, int? depth) =>
         new(Guid.NewGuid(), "NFL", team, position, id, name, null, depth);
 
+    [Fact]
+    public async Task Seed_PositionNotAllowedForSport_Throws() =>
+        await Assert.ThrowsAsync<DepthCharts.Domain.DomainValidationException>(
+            () => factory.SeedAsync(Add("tpos", 1, "Bob", "SS", null), T0));
+
     private async Task SeedBrief(string team)
     {
         await factory.SeedAsync(Add(team, 1, "Bob", "WR", 0), T0);
