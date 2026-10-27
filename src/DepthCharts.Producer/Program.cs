@@ -18,6 +18,6 @@ return await ProducerApp.RunAsync(
     () => host.Services.GetRequiredService<ICommandPublisher>(),
     () => new DepthChartApiClient(new HttpClient
     {
-        BaseAddress = ProducerApp.ParseBaseUrl(builder.Configuration["Api:BaseUrl"] ?? "http://localhost:5000"),
+        BaseAddress = ProducerApp.ParseBaseUrl(builder.Configuration["Api:BaseUrl"] ?? "http://localhost:5050"),
     }),
     Console.Out, Console.Error, cts.Token);

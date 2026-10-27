@@ -50,7 +50,7 @@ public static class ProducerApp
         }
     }
 
-    // "localhost:5000" parses as scheme "localhost" and only fails later, so require http(s) up front.
+    // "localhost:5050" parses as scheme "localhost" and only fails later, so require http(s) up front.
     public static Uri ParseBaseUrl(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
             ? uri

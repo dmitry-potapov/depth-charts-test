@@ -18,7 +18,7 @@
 - Consumer: earliest offset on every start, never commits offsets, one message at a time, a fresh DI scope per message, `occurredAt` = Kafka message timestamp (UTC), `CancellationToken` passed to `Consume` and the handler.
 - Bad JSON or `DomainValidationException` → log Warning, skip. Any other exception → log Error, skip. No retry, no DLQ.
 - Routes and response shapes exactly as spec §6. Unknown team/player → `200` with empty result. Invalid identifier or unparseable `asOf` → `400` ProblemDetails.
-- Api listens on `http://localhost:5000` (stage 4's `Api:BaseUrl` default).
+- Api listens on `http://localhost:5050` (stage 4's `Api:BaseUrl` default).
 - Before calling the stage done: `dotnet build` and `dotnet test` both pass.
 
 ## Review Focus
@@ -69,7 +69,7 @@ tests/DepthCharts.Tests/
     - Both take `string? asOf` from the query; null/empty → no filter; otherwise `DateTimeOffset.TryParseExact` against explicit ISO-8601 formats only (`yyyy-MM-dd`, `…THH:mmK`, `…THH:mm:ss[.fffffff]K`; offset optional, default UTC; a space is read as an unencoded `+`), failure → `TypedResults.Problem(statusCode: 400, title: "Invalid asOf")`. This is boundary validation, the only logic allowed in the endpoint besides mapping.
   - `DomainValidationExceptionHandler : IExceptionHandler` → status 400, writes ProblemDetails via `IProblemDetailsService` with `Detail = exception.Message`; returns `false` for other exceptions.
   - `Program.cs`: `AddProblemDetails()`, `AddExceptionHandler<DomainValidationExceptionHandler>()`, `AddApplication()`, `AddInfrastructure(builder.Configuration)`; `UseExceptionHandler()`; `MapDepthChartEndpoints()`.
-  - `launchSettings.json`: one `http` profile, `applicationUrl` `http://localhost:5000`.
+  - `launchSettings.json`: one `http` profile, `applicationUrl` `http://localhost:5050`.
   - `ApiFactory : WebApplicationFactory<Program>` with `builder.UseSetting("Kafka:ConsumerEnabled", "false")`, and `Task SeedAsync(DepthChartCommand command, DateTimeOffset occurredAt)` that resolves `DepthChartCommandHandler` from a new scope of `Services`.
 
   `{playerId:int}` makes a non-numeric id 404 (route mismatch). Non-positive ids are rejected by the domain (`DomainValidationException`) and become 400.
@@ -134,7 +134,7 @@ git commit -m "feat(infrastructure): consume depth chart commands from Kafka"
 No code. Needs Docker. Record the outcome in the PR/hand-off note.
 
 - [ ] **Step 1:** `docker compose up -d` — Expected: `kafka` container running.
-- [ ] **Step 2:** `dotnet run --project src/DepthCharts.Api` (separate terminal) — Expected: listening on `http://localhost:5000`, no consumer errors.
+- [ ] **Step 2:** `dotnet run --project src/DepthCharts.Api` (separate terminal) — Expected: listening on `http://localhost:5050`, no consumer errors.
 - [ ] **Step 3:** send one command:
 ```bash
 echo 'nfl:tb|{"type":"add-player","commandId":"6f1c2e1a-0000-4000-8000-000000000001","sport":"NFL","team":"tb","position":"QB","playerId":12,"playerName":"Tom Brady","playerPosition":"QB","depth":0}' \
@@ -142,5 +142,5 @@ echo 'nfl:tb|{"type":"add-player","commandId":"6f1c2e1a-0000-4000-8000-000000000
       --bootstrap-server localhost:9092 --topic depth-chart-commands \
       --property parse.key=true --property key.separator='|'
 ```
-- [ ] **Step 4:** `curl -s http://localhost:5000/depth-charts/nfl/tb` — Expected: `{"QB":[{"playerId":12,"name":"Tom Brady"}]}`.
+- [ ] **Step 4:** `curl -s http://localhost:5050/depth-charts/nfl/tb` — Expected: `{"QB":[{"playerId":12,"name":"Tom Brady"}]}`.
 - [ ] **Step 5:** restart the Api and repeat Step 4 — Expected: same output (replayed from earliest).

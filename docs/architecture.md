@@ -109,9 +109,9 @@ An invalid sport, team, position or player id throws `DomainValidationException`
 
 ## Configuration
 
-Api: `appsettings.json` has a `Kafka` section: `BootstrapServers` (`localhost:9092`), `Topic` (`depth-chart-commands`) and `ConsumerEnabled` (`true`). The Api starts `KafkaCommandConsumer` by default, so run `docker compose up -d` first. Without a broker the Api still starts but serves empty charts; set `Kafka:ConsumerEnabled` to `false` to run it without Kafka. The `http` launch profile listens on `http://localhost:5000` in `Development`.
+Api: `appsettings.json` has a `Kafka` section: `BootstrapServers` (`localhost:9092`), `Topic` (`depth-chart-commands`) and `ConsumerEnabled` (`true`). The Api starts `KafkaCommandConsumer` by default, so run `docker compose up -d` first. Without a broker the Api still starts but serves empty charts; set `Kafka:ConsumerEnabled` to `false` to run it without Kafka. The `http` launch profile listens on `http://localhost:5050` in `Development`.
 
-Producer: `Kafka:BootstrapServers` (default `localhost:9092`) and `Api:BaseUrl` (default `http://localhost:5000`; must be an absolute `http`/`https` URL), via `appsettings`/environment (e.g. `Api__BaseUrl`).
+Producer: `Kafka:BootstrapServers` (default `localhost:9092`) and `Api:BaseUrl` (default `http://localhost:5050`; must be an absolute `http`/`https` URL), via `appsettings`/environment (e.g. `Api__BaseUrl`).
 
 ## Testing
 

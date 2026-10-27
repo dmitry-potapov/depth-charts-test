@@ -167,7 +167,7 @@ public class ProducerAppTests
     }
 
     [Theory]
-    [InlineData("localhost:5000")] // parses as scheme "localhost"
+    [InlineData("localhost:5050")] // parses as scheme "localhost"
     [InlineData("not a uri")]
     [InlineData("ftp://host/")]
     public async Task BadBaseUrl_ExitsOne_NoCrash(string baseUrl)
@@ -186,7 +186,7 @@ public class ProducerAppTests
     [Fact]
     public void ParseBaseUrl_AcceptsHttpAndHttps()
     {
-        Assert.Equal("http://localhost:5000/", ProducerApp.ParseBaseUrl("http://localhost:5000").ToString());
+        Assert.Equal("http://localhost:5050/", ProducerApp.ParseBaseUrl("http://localhost:5050").ToString());
         Assert.Equal("https://api/", ProducerApp.ParseBaseUrl("https://api").ToString());
     }
 

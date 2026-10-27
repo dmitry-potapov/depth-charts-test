@@ -182,7 +182,7 @@ producer demo
 - `demo` publishes the brief's example for `NFL/demo`:
   - Bob → WR at depth 0, Alice → WR at depth 0, Charlie → WR at depth 2, Bob → KR.
   - It then polls `chart` until WR has 3 players and KR has 1, with a 10 s timeout. It prints the chart (`WR: [2, 1, 3]`, `KR: [1]`), and prints `below Alice WR` (`[1, 3]`).
-- Configuration: `Kafka:BootstrapServers` and `Api:BaseUrl` (default `http://localhost:5000`).
+- Configuration: `Kafka:BootstrapServers` and `Api:BaseUrl` (default `http://localhost:5050`).
 
 ## 8. Running
 

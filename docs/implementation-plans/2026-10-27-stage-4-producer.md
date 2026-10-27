@@ -16,7 +16,7 @@
 
 - CLI grammar exactly as spec §7. Arguments are validated before anything is sent. Each command gets a fresh `CommandId` (`Guid.NewGuid()`).
 - Kafka message key = stream id (`DepthChart.StreamIdFor`), value = `CommandSerializer.Serialize(command)`, timestamp left to the producer.
-- Config: `Kafka:BootstrapServers` (default `localhost:9092`), `Api:BaseUrl` (default `http://localhost:5000`).
+- Config: `Kafka:BootstrapServers` (default `localhost:9092`), `Api:BaseUrl` (default `http://localhost:5050`).
 - `demo`: team `NFL/demo`; Bob(1) WR 0, Alice(2) WR 0, Charlie(3) WR 2, Bob KR; poll until WR has 3 and KR has 1, 10 s timeout; then print exactly:
   ```
   WR: [2, 1, 3]
@@ -152,7 +152,7 @@ git commit -m "feat(producer): rename console to Producer and parse CLI verbs"
     - `string FormatIds(IEnumerable<PlayerDto> players)` → `"[2, 1, 3]"`, `"[]"`.
     - `string FormatChart(IReadOnlyDictionary<string, List<PlayerDto>> chart)` → one `"{POS}: {ids}"` line per position, in dictionary order, joined by `Environment.NewLine`.
   - `public sealed class DemoRunner(ICommandPublisher publisher, DepthChartApiClient api, TextWriter output)` → `Task<int> RunAsync(CancellationToken ct)`: publish the four commands, poll `GetChartAsync("NFL","demo")` every 250 ms until WR count 3 and KR count 1 (10 s `CancellationTokenSource` linked to `ct`), then print `FormatChart` and `below Alice WR: {FormatIds(GetBelowAsync(... "WR", 2 ...))}`; on timeout print an error and return `1`.
-  - `Program.cs`: `Host.CreateApplicationBuilder()` **without** `args` (keeps CLI tokens out of configuration), `AddCommandPublisher(builder.Configuration)`; `HttpClient { BaseAddress = new Uri(config["Api:BaseUrl"] ?? "http://localhost:5000") }`; parse, then `switch` on the request: publish → print `Published {type} {commandId}`; chart → `FormatChart`; below → `FormatIds`; demo → `DemoRunner`. Catch `CliUsageException` (message + `Usage` to stderr, exit 1), `HttpRequestException` and `ProduceException<string,string>` (message to stderr, exit 1). Ctrl+C cancels the token.
+  - `Program.cs`: `Host.CreateApplicationBuilder()` **without** `args` (keeps CLI tokens out of configuration), `AddCommandPublisher(builder.Configuration)`; `HttpClient { BaseAddress = new Uri(config["Api:BaseUrl"] ?? "http://localhost:5050") }`; parse, then `switch` on the request: publish → print `Published {type} {commandId}`; chart → `FormatChart`; below → `FormatIds`; demo → `DemoRunner`. Catch `CliUsageException` (message + `Usage` to stderr, exit 1), `HttpRequestException` and `ProduceException<string,string>` (message to stderr, exit 1). Ctrl+C cancels the token.
 
 - [ ] **Step 1: Write the failing tests:**
   - `FormatChart_BriefExample`: `{WR:[2,1,3], KR:[1]}` → `"WR: [2, 1, 3]" + NewLine + "KR: [1]"`.
