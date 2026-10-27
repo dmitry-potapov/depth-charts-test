@@ -95,6 +95,42 @@ public class DepthChartTests
     }
 
     [Fact]
+    public void AddPlayer_ExistingPlayerNewName_UpdatesNameInEveryPosition()
+    {
+        var c = New();
+        Do(c, c.AddPlayer(Pl(1, "Bob"), P("WR"), null, T0));
+        Do(c, c.AddPlayer(Pl(1, "Bob"), P("KR"), null, T0));
+        Do(c, c.AddPlayer(Pl(1, "Robert"), P("WR"), null, T0));
+        Assert.All(c.GetFullChart().Values, l => Assert.Equal("Robert", Assert.Single(l).Name));
+    }
+
+    [Fact]
+    public void Apply_DepthBeyondList_AppendsInsteadOfThrowing()
+    {
+        var c = New();
+        c.Apply(new PlayerAddedToDepthChart(NFL, TB, Pl(2), P("WR"), 1, T0));
+        Assert.Equal([2], Ids(c, "WR"));
+    }
+
+    [Fact]
+    public void Apply_UnknownEvent_ThrowsAndKeepsVersion()
+    {
+        var c = New();
+        Assert.Throws<InvalidOperationException>(() => c.Apply(new UnknownEvent(NFL, TB, T0)));
+        Assert.Equal(0, c.Version);
+    }
+
+    [Fact]
+    public void Constructors_RejectNulls()
+    {
+        Assert.Throws<DomainValidationException>(() => new Player(null!, "Bob", null));
+        Assert.Throws<DomainValidationException>(() => new DepthChart(null!, TB));
+        Assert.Throws<DomainValidationException>(() => new DepthChart(NFL, null!));
+    }
+
+    sealed record UnknownEvent(Sport Sport, TeamId TeamId, DateTimeOffset OccurredAt) : IDomainEvent;
+
+    [Fact]
     public void AddPlayer_EmitsEventWithChartIdentity()
     {
         var e = Assert.IsType<PlayerAddedToDepthChart>(Assert.Single(New().AddPlayer(Pl(1), P("WR"), null, T0)));

@@ -2,13 +2,19 @@ using DepthCharts.Domain.Events;
 
 namespace DepthCharts.Domain;
 
-public sealed class DepthChart(Sport sport, TeamId teamId)
+public sealed class DepthChart
 {
     // Keys are never removed so positions keep first-added order.
     private readonly Dictionary<Position, List<Player>> _chart = [];
 
-    public Sport Sport { get; } = sport;
-    public TeamId TeamId { get; } = teamId;
+    public DepthChart(Sport sport, TeamId teamId)
+    {
+        Sport = sport ?? throw new DomainValidationException("Sport is required.");
+        TeamId = teamId ?? throw new DomainValidationException("TeamId is required.");
+    }
+
+    public Sport Sport { get; }
+    public TeamId TeamId { get; }
     public string StreamId => StreamIdFor(Sport, TeamId);
     public int Version { get; private set; }
 
@@ -46,7 +52,12 @@ public sealed class DepthChart(Sport sport, TeamId teamId)
                 if (!_chart.TryGetValue(added.Position, out var list))
                     _chart[added.Position] = list = [];
                 list.RemoveAll(p => p.Id == added.Player.Id);
-                list.Insert(added.Depth, added.Player);
+                // Clamp: a filtered or corrupt stream may be missing earlier events.
+                list.Insert(Math.Min(added.Depth, list.Count), added.Player);
+                // A player has one name across all positions: latest event wins.
+                foreach (var other in _chart.Values)
+                    for (var i = 0; i < other.Count; i++)
+                        if (other[i].Id == added.Player.Id) other[i] = added.Player;
                 break;
             case PlayerRemovedFromDepthChart removed:
                 if (_chart.TryGetValue(removed.Position, out var existing))
