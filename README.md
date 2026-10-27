@@ -9,10 +9,9 @@ Value types normalise their input and throw `DomainValidationException` when it 
 | Type | Rule |
 |------|------|
 | `Sport` | Trimmed, upper-cased, letters and digits only (`NFL`). |
-| `TeamId` | Trimmed, lower-cased, letters, digits and `-` only (`tampa-bay`). |
+| `Team` | Trimmed, lower-cased, letters, digits and `-` only (`tampa-bay`). |
 | `Position` | Non-empty, trimmed, upper-cased (`qb` → `QB`). |
-| `PlayerId` | Positive integer. |
-| `Player` | Has an id, a non-empty trimmed name and an optional natural position. |
+| `Player` | Has a positive integer id, a non-empty trimmed name and an optional natural position. |
 
 `DepthChart` is the aggregate for one sport and team. Its stream id is `"{sport}:{team}"` in lower case, e.g. `nfl:tampa-bay`.
 

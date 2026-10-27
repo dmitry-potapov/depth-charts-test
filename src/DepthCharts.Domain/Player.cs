@@ -2,15 +2,16 @@ namespace DepthCharts.Domain;
 
 public sealed record Player
 {
-    public Player(PlayerId id, string name, Position? naturalPosition)
+    public Player(int id, string name, Position? naturalPosition)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new DomainValidationException("Player name must not be empty.");
-        Id = id ?? throw new DomainValidationException("Player id is required.");
+        if (id <= 0) throw new DomainValidationException("Player id must be positive.");
+        Id = id;
         Name = name.Trim();
         NaturalPosition = naturalPosition;
     }
 
-    public PlayerId Id { get; }
+    public int Id { get; }
     public string Name { get; }
     public Position? NaturalPosition { get; }
 }

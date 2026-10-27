@@ -15,10 +15,10 @@ public class ValueTypeTests
     public void Position_NormalisesToUpper() => Assert.Equal("1B", new Position(" 1b ").Value);
 
     [Fact]
-    public void TeamId_NormalisesToLower()
+    public void Team_NormalisesToLower()
     {
-        Assert.Equal("tb", new TeamId(" Tb ").Value);
-        Assert.Equal("new-york-1", new TeamId("new-york-1").Value);
+        Assert.Equal("tb", new Team(" Tb ").Value);
+        Assert.Equal("new-york-1", new Team("new-york-1").Value);
     }
 
     [Theory]
@@ -27,8 +27,8 @@ public class ValueTypeTests
     [InlineData("t:b")]
     [InlineData("t b")]
     [InlineData("tb!")]
-    public void TeamId_RejectsInvalid(string value) =>
-        Assert.Throws<DomainValidationException>(() => new TeamId(value));
+    public void Team_RejectsInvalid(string value) =>
+        Assert.Throws<DomainValidationException>(() => new Team(value));
 
     [Theory]
     [InlineData("K")]
@@ -50,16 +50,13 @@ public class ValueTypeTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public void PlayerId_RejectsNonPositive(int value)
-    {
-        Assert.Throws<DomainValidationException>(() => new PlayerId(value));
-        Assert.Equal(1, new PlayerId(1).Value);
-    }
+    public void Player_RejectsNonPositiveId(int value) =>
+        Assert.Throws<DomainValidationException>(() => new Player(value, "Bob", null));
 
     [Fact]
     public void Player_RejectsEmptyName()
     {
-        Assert.Throws<DomainValidationException>(() => new Player(new PlayerId(1), " ", null));
-        Assert.Equal("Bob", new Player(new PlayerId(1), " Bob ", null).Name);
+        Assert.Throws<DomainValidationException>(() => new Player(1, " ", null));
+        Assert.Equal("Bob", new Player(1, " Bob ", null).Name);
     }
 }

@@ -2,14 +2,14 @@ using System.Text.RegularExpressions;
 
 namespace DepthCharts.Domain;
 
-public sealed partial record TeamId
+public sealed partial record Team
 {
-    public TeamId(string value)
+    public Team(string value)
     {
-        if (string.IsNullOrWhiteSpace(value)) throw new DomainValidationException("TeamId must not be empty.");
+        if (string.IsNullOrWhiteSpace(value)) throw new DomainValidationException("Team must not be empty.");
         var normalised = value.Trim().ToLowerInvariant();
         if (!ValidPattern().IsMatch(normalised))
-            throw new DomainValidationException("TeamId may only contain letters, digits and '-'.");
+            throw new DomainValidationException("Team may only contain letters, digits and '-'.");
         Value = normalised;
     }
 
