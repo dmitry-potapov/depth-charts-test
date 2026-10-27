@@ -51,6 +51,7 @@ Each value type enforces its own invariants and throws in its constructor.
 
 - `Sport`: a non-empty string, trimmed and upper-cased (`NFL`, `MLB`, …).
 - `Position`: a non-empty string, trimmed and upper-cased (`WR`, `1B`, …). It is not checked against the sport.
+- `TeamId`: a non-empty string, trimmed and lower-cased. It may contain only `[a-z0-9-]`, which keeps `:` out of stream ids so they can't collide.
 - `PlayerId`: a positive integer.
 - `Player(PlayerId Id, string Name, Position? NaturalPosition)`: the name must be non-empty. The natural position is informational only, because a player may appear on any position's chart.
 
@@ -67,10 +68,10 @@ Commands are methods that validate and return new events. They do not mutate sta
   - If `depth` is null or greater than the current count, the player is added at the end.
   - If a player already holds that depth, they and everyone below move down one place. The last player entered gets the spot.
   - If the player is already on that position's chart, they are moved: removed, then inserted at the new depth, which is resolved against the list *without* them.
-  - Emits `PlayerAddedToDepthChart(Player, Position, ResolvedDepth, OccurredAt)`.
+  - Emits `PlayerAddedToDepthChart(Sport, TeamId, Player, Position, ResolvedDepth, OccurredAt)`.
 - `RemovePlayer(PlayerId, Position, DateTimeOffset occurredAt)`
   - If the player is not on that chart, nothing happens and no event is emitted.
-  - Otherwise emits `PlayerRemovedFromDepthChart(PlayerId, Position, OccurredAt)`.
+  - Otherwise emits `PlayerRemovedFromDepthChart(Sport, TeamId, PlayerId, Position, OccurredAt)`.
 - `Apply(event)` mutates state. Replaying a stream means calling `Apply` for each event in order.
 
 Queries are pure reads of the state:
@@ -80,7 +81,10 @@ Queries are pure reads of the state:
 
 ### Events
 
-Events are immutable records that implement `IDomainEvent { DateTimeOffset OccurredAt }`. Each event records the **resolved** depth, so replaying it is deterministic and never re-runs the defaulting rules.
+Events are immutable records that implement `IDomainEvent { Sport Sport; TeamId TeamId; DateTimeOffset OccurredAt }`.
+
+- Each event records the **resolved** depth, so replaying it is deterministic and never re-runs the defaulting rules.
+- Each event carries its own `Sport` and `TeamId`, so history can later be filtered by team without parsing stream ids. `Apply` ignores both fields, because the aggregate already knows its identity.
 
 ## 4. Application
 
@@ -185,7 +189,7 @@ The README documents these steps and the assumptions in §3.
 
 | Layer | Tests |
 |---|---|
-| Domain | The brief's example end to end. Insert-and-bump. Null depth and depth past the end both append. A negative depth throws. Moving a player within a position. Removing a player who is absent emits no event. `GetPlayersUnder` for the last player, an absent player and an absent position. The same player on several positions. MLB positions such as `1B`. Value-type invariants. |
+| Domain | Emitted events carry the chart's `Sport` and `TeamId`. `TeamId` rejects empty values and `:`. The brief's example end to end. Insert-and-bump. Null depth and depth past the end both append. A negative depth throws. Moving a player within a position. Removing a player who is absent emits no event. `GetPlayersUnder` for the last player, an absent player and an absent position. The same player on several positions. MLB positions such as `1B`. Value-type invariants. |
 | Event sourcing | Replaying the emitted events rebuilds an equal state. Loading with `asOf` between events gives the earlier chart. |
 | Application + EF store | A handler appends events. A duplicate `CommandId` is ignored. A stale `expectedVersion` throws `ConcurrencyException`. A no-op remove appends nothing. |
 | Api | `WebApplicationFactory` with `Kafka:ConsumerEnabled=false`, the store seeded through the handler: chart, below, `asOf`, and 400 cases. |
