@@ -1,8 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\DepthCharts.Application\DepthCharts.Application.csproj" />
-    <ProjectReference Include="..\DepthCharts.Domain\DepthCharts.Domain.csproj" />
+    <ProjectReference Include="..\DepthCharts.Infrastructure\DepthCharts.Infrastructure.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
   </ItemGroup>
 
   <PropertyGroup>

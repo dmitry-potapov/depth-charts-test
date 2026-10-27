@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\DepthCharts.Application\DepthCharts.Application.csproj" />
     <ProjectReference Include="..\..\src\DepthCharts.Domain\DepthCharts.Domain.csproj" />
     <ProjectReference Include="..\..\src\DepthCharts.Infrastructure\DepthCharts.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\DepthCharts.Producer\DepthCharts.Producer.csproj" />
   </ItemGroup>
 
 </Project>
