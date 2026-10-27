@@ -14,9 +14,9 @@
 
 - Domain has **no package references** and no project references.
 - Value types throw `DomainValidationException` in their constructor on invalid input.
-- `Sport`, `Position`: non-empty, trimmed, upper-cased. `TeamId`: non-empty, trimmed, lower-cased, only `[a-z0-9-]`. `PlayerId`: positive int. `Player.Name`: non-empty.
-- Stream id: `"{sport}:{teamId}"` in lower case, e.g. `nfl:tb`.
-- Events record the **resolved** depth and carry `Sport` and `TeamId`; `Apply` ignores those two fields.
+- `Sport`, `Position`: non-empty, trimmed, upper-cased. `Team`: non-empty, trimmed, lower-cased, only `[a-z0-9-]`. `Player.Id`: positive int (no wrapper type). `Player.Name`: non-empty.
+- Stream id: `"{sport}:{team}"` in lower case, e.g. `nfl:tb`.
+- Events record the **resolved** depth and carry `Sport` and `Team`; `Apply` ignores those two fields.
 - Positions are free-form; nothing is checked against the sport.
 - Before calling the stage done: `dotnet build` and `dotnet test` both pass.
 
@@ -33,7 +33,7 @@
 ```
 src/DepthCharts.Domain/
   DomainValidationException.cs
-  Sport.cs  TeamId.cs  Position.cs  PlayerId.cs  Player.cs
+  Sport.cs  Team.cs  Position.cs  Player.cs
   DepthChart.cs
   Events/IDomainEvent.cs
   Events/PlayerAddedToDepthChart.cs
@@ -51,14 +51,14 @@ Namespaces: `DepthCharts.Domain` and `DepthCharts.Domain.Events`.
 ### Task 1: Value types
 
 **Files:**
-- Create: `src/DepthCharts.Domain/DomainValidationException.cs`, `Sport.cs`, `TeamId.cs`, `Position.cs`, `PlayerId.cs`, `Player.cs`
+- Create: `src/DepthCharts.Domain/DomainValidationException.cs`, `Sport.cs`, `Team.cs`, `Position.cs`, `Player.cs`
 - Test: `tests/DepthCharts.Tests/Domain/ValueTypeTests.cs`
 
 **Interfaces:**
 - Produces:
   - `public sealed class DomainValidationException(string message) : Exception(message)`
-  - `public sealed record Sport(string value)` → `string Value`, `ToString() => Value`. Same shape for `Position(string)`, `TeamId(string)`, `PlayerId(int)` (`int Value`).
-  - `public sealed record Player(PlayerId id, string name, Position? naturalPosition)` → `Id`, `Name` (trimmed), `NaturalPosition`.
+  - `public sealed record Sport(string value)` → `string Value`, `ToString() => Value`. Same shape for `Position(string)` and `Team(string)`.
+  - `public sealed record Player(int id, string name, Position? naturalPosition)` → `int Id` (must be positive), `Name` (trimmed), `NaturalPosition`.
 
 All value types are `sealed record` classes (value equality, usable as dictionary keys, no default-struct bypass of the constructor). Constructor parameter names must match property names case-insensitively, so System.Text.Json can deserialise them in stage 2. Pattern:
 
@@ -78,13 +78,13 @@ public sealed record Sport
 - [ ] **Step 1: Write the failing tests** in `ValueTypeTests.cs`:
   - `Sport_NormalisesToUpper`: `new Sport(" nfl ").Value == "NFL"`; `new Sport("nfl") == new Sport("NFL")`.
   - `Position_NormalisesToUpper`: `new Position(" 1b ").Value == "1B"`.
-  - `TeamId_NormalisesToLower`: `new TeamId(" Tb ").Value == "tb"`; `new TeamId("new-york-1").Value == "new-york-1"`.
-  - `[Theory] TeamId_RejectsInvalid` with `""`, `"  "`, `"t:b"`, `"t b"`, `"tb!"` → `Assert.Throws<DomainValidationException>`.
+  - `Team_NormalisesToLower`: `new Team(" Tb ").Value == "tb"`; `new Team("new-york-1").Value == "new-york-1"`.
+  - `[Theory] Team_RejectsInvalid` with `""`, `"  "`, `"t:b"`, `"t b"`, `"tb!"` → `Assert.Throws<DomainValidationException>`.
   - `[Theory] Sport_And_Position_RejectEmpty` with `""`, `"   "` → both throw.
-  - `[Theory] PlayerId_RejectsNonPositive` with `0`, `-1` → throws; `new PlayerId(1).Value == 1`.
-  - `Player_RejectsEmptyName`: `new Player(new PlayerId(1), " ", null)` throws; `new Player(new PlayerId(1), " Bob ", null).Name == "Bob"`.
+  - `[Theory] Player_RejectsNonPositiveId` with `0`, `-1` → `new Player(id, "Bob", null)` throws.
+  - `Player_RejectsEmptyName`: `new Player(1, " ", null)` throws; `new Player(1, " Bob ", null).Name == "Bob"`.
 - [ ] **Step 2: Run** `dotnet test --filter FullyQualifiedName~ValueTypeTests` — Expected: build FAIL (types missing).
-- [ ] **Step 3: Implement** the six files per the Interfaces block. `TeamId` validates the normalised value against `^[a-z0-9-]+$`.
+- [ ] **Step 3: Implement** the six files per the Interfaces block. `Team` validates the normalised value against `^[a-z0-9-]+$`.
 - [ ] **Step 4: Run** `dotnet test --filter FullyQualifiedName~ValueTypeTests` — Expected: PASS.
 - [ ] **Step 5: Commit**
 ```bash
@@ -103,18 +103,18 @@ git commit -m "feat(domain): add depth chart value types"
 **Interfaces:**
 - Consumes: Task 1 types.
 - Produces:
-  - `public interface IDomainEvent { Sport Sport { get; } TeamId TeamId { get; } DateTimeOffset OccurredAt { get; } }`
-  - `public sealed record PlayerAddedToDepthChart(Sport Sport, TeamId TeamId, Player Player, Position Position, int Depth, DateTimeOffset OccurredAt) : IDomainEvent`
-  - `public sealed record PlayerRemovedFromDepthChart(Sport Sport, TeamId TeamId, PlayerId PlayerId, Position Position, DateTimeOffset OccurredAt) : IDomainEvent`
+  - `public interface IDomainEvent { Sport Sport { get; } Team Team { get; } DateTimeOffset OccurredAt { get; } }`
+  - `public sealed record PlayerAddedToDepthChart(Sport Sport, Team Team, Player Player, Position Position, int Depth, DateTimeOffset OccurredAt) : IDomainEvent`
+  - `public sealed record PlayerRemovedFromDepthChart(Sport Sport, Team Team, int PlayerId, Position Position, DateTimeOffset OccurredAt) : IDomainEvent`
   - `public sealed class DepthChart`
-    - `DepthChart(Sport sport, TeamId teamId)`
-    - `Sport Sport`, `TeamId TeamId`, `string StreamId`, `int Version` (events applied)
-    - `static string StreamIdFor(Sport sport, TeamId teamId)` → `"nfl:tb"`
+    - `DepthChart(Sport sport, Team team)`
+    - `Sport Sport`, `Team Team`, `string StreamId`, `int Version` (events applied)
+    - `static string StreamIdFor(Sport sport, Team team)` → `"nfl:tb"`
     - `IReadOnlyList<IDomainEvent> AddPlayer(Player player, Position position, int? depth, DateTimeOffset occurredAt)` — always one event
-    - `IReadOnlyList<IDomainEvent> RemovePlayer(PlayerId playerId, Position position, DateTimeOffset occurredAt)` — zero or one event
+    - `IReadOnlyList<IDomainEvent> RemovePlayer(int playerId, Position position, DateTimeOffset occurredAt)` — zero or one event; `playerId <= 0` throws `DomainValidationException`
     - `void Apply(IDomainEvent @event)` — unknown event type throws `InvalidOperationException`
     - `IReadOnlyDictionary<Position, IReadOnlyList<Player>> GetFullChart()`
-    - `IReadOnlyList<Player> GetPlayersUnder(PlayerId playerId, Position position)`
+    - `IReadOnlyList<Player> GetPlayersUnder(int playerId, Position position)` — `playerId <= 0` throws `DomainValidationException`
 
 State is `Dictionary<Position, List<Player>>`. Players are matched by `Id` only. Decisions the spec leaves open:
 - Depth resolution in `AddPlayer`: take the position's list, remove this player's id if present, then `resolved = depth is null || depth > count ? count : depth`. `depth < 0` throws `DomainValidationException`.
@@ -130,15 +130,16 @@ Test helper in the test class: `static void Do(DepthChart c, IEnumerable<IDomain
   - `AddPlayer_ExistingPlayer_Moves`: [1,2,3], add 3 at 0 → `[3,1,2]`.
   - `AddPlayer_MovePastEnd_ResolvesAgainstListWithoutPlayer`: [1,2,3], add 1 at 3 → `[2,3,1]`, event `Depth == 2`.
   - `AddPlayer_ExistingPlayerNewName_UpdatesName`: add (1,"Bob") then (1,"Robert") at same position → single entry named `"Robert"`.
-  - `AddPlayer_EmitsEventWithChartIdentity`: event is `PlayerAddedToDepthChart` with `Sport == NFL`, `TeamId == tb`, `OccurredAt == T0`.
+  - `AddPlayer_EmitsEventWithChartIdentity`: event is `PlayerAddedToDepthChart` with `Sport == NFL`, `Team == tb`, `OccurredAt == T0`.
   - `AddPlayer_DoesNotMutateUntilApplied`: after `AddPlayer` without `Apply`, `GetFullChart()` is empty and `Version == 0`; after `Do`, `Version == 1`.
-  - `RemovePlayer_Present_EmitsEventAndRemoves`: [1,2] remove 1 → one `PlayerRemovedFromDepthChart` with `Sport`/`TeamId` set; after apply `[2]`.
+  - `RemovePlayer_Present_EmitsEventAndRemoves`: [1,2] remove 1 → one `PlayerRemovedFromDepthChart` with `Sport`/`Team` set; after apply `[2]`.
+  - `[Theory] RemovePlayer_And_GetPlayersUnder_RejectNonPositiveId` with `0`, `-1` → both throw `DomainValidationException`.
   - `RemovePlayer_Absent_EmitsNothing`: on empty chart and on a position without the player → `Assert.Empty(events)`.
   - `RemovePlayer_LastOnPosition_PositionNotInFullChart`: WR [1], KR [1]; remove 1 from WR → keys `["KR"]`.
   - `GetPlayersUnder_LastPlayer_Empty`, `GetPlayersUnder_AbsentPlayer_Empty`, `GetPlayersUnder_AbsentPosition_Empty`.
   - `SamePlayer_OnSeveralPositions_Independent`: player 1 on WR and KR; remove from WR leaves KR `[1]`.
   - `MlbPositions_Work`: sport `MLB`, positions `1B`, `SP` → charts `[1]` and `[2]`.
-  - `StreamIdFor_IsLowerCase`: `StreamIdFor(new Sport("NFL"), new TeamId("TB")) == "nfl:tb"`.
+  - `StreamIdFor_IsLowerCase`: `StreamIdFor(new Sport("NFL"), new Team("TB")) == "nfl:tb"`.
 - [ ] **Step 2: Run** `dotnet test --filter FullyQualifiedName~DepthChartTests` — Expected: build FAIL.
 - [ ] **Step 3: Implement** the events and `DepthChart` per the Interfaces block and the decisions above.
 - [ ] **Step 4: Run** `dotnet test --filter FullyQualifiedName~DepthChartTests` — Expected: PASS.
@@ -158,7 +159,7 @@ git commit -m "feat(domain): add event-sourced DepthChart aggregate"
 
 **Interfaces:**
 - Consumes: Task 2.
-- Produces: `public static DepthChart Replay(Sport sport, TeamId teamId, IEnumerable<IDomainEvent> events)` — new chart, `Apply` each in order. Stage 2 handlers call this.
+- Produces: `public static DepthChart Replay(Sport sport, Team team, IEnumerable<IDomainEvent> events)` — new chart, `Apply` each in order. Stage 2 handlers call this.
 
 - [ ] **Step 1: Write the failing tests** in `ReplayTests.cs`:
   - `Replay_EmittedEvents_RebuildsEqualState`: on chart A run the brief example (4 events), one move (1), one remove (1) and one no-op remove (0), collecting every emitted event; `Replay(NFL, tb, collected)` gives the same position keys in the same order, the same player ids per position, and `Version == 6` on both.

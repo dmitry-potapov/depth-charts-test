@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-27-event-sourced-depth-charts-design.md` (§5 Kafka publisher, §7, §8, §10 stage 4)
 
-**Depends on:** Stages 1–3 merged. Uses `ICommandPublisher`, `AddPlayerCommand`, `RemovePlayerCommand`, `CommandSerializer.Serialize`, `KafkaOptions`, `DepthChart.StreamIdFor`, the value types, and the Api routes/shape from stage 3 (`GET /depth-charts/{sport}/{teamId}`, `…/positions/{position}/players/{playerId}/below`, items `{playerId, name}`).
+**Depends on:** Stages 1–3 merged. Uses `ICommandPublisher`, `AddPlayerCommand`, `RemovePlayerCommand`, `CommandSerializer.Serialize`, `KafkaOptions`, `DepthChart.StreamIdFor`, the value types, and the Api routes/shape from stage 3 (`GET /depth-charts/{sport}/{team}`, `…/positions/{position}/players/{playerId}/below`, items `{playerId, name}`).
 
 ## Global Constraints
 
@@ -69,12 +69,12 @@ tests/DepthCharts.Tests/
 - Consumes: `ICommandPublisher`, `KafkaOptions`, `CommandSerializer`, `DepthChart.StreamIdFor`.
 - Produces:
   - `public sealed class KafkaCommandPublisher(IOptions<KafkaOptions> options) : ICommandPublisher, IDisposable` — one `IProducer<string, string>` (`ProducerConfig { BootstrapServers, MessageTimeoutMs = 10000 }`) built in the constructor; `PublishAsync` → `ProduceAsync(Topic, new Message<string,string> { Key = KeyFor(command), Value = CommandSerializer.Serialize(command) }, ct)`; `Dispose` flushes (5 s) and disposes.
-  - `public static string KeyFor(DepthChartCommand command)` → `DepthChart.StreamIdFor(new Sport(command.Sport), new TeamId(command.TeamId))`.
+  - `public static string KeyFor(DepthChartCommand command)` → `DepthChart.StreamIdFor(new Sport(command.Sport), new Team(command.Team))`.
   - `public static IServiceCollection AddCommandPublisher(this IServiceCollection services, IConfiguration configuration)` — `Configure<KafkaOptions>(Kafka section)`, singleton `ICommandPublisher → KafkaCommandPublisher`. Does not register the store or consumer.
 
 - [ ] **Step 1: Write the failing tests:**
-  - `KeyFor_NormalisesToStreamId`: `AddPlayerCommand` with `Sport "nfl"`, `TeamId "TB"` → `"nfl:tb"`.
-  - `KeyFor_InvalidTeam_ThrowsDomainValidation`: `TeamId "t:b"` → `DomainValidationException`.
+  - `KeyFor_NormalisesToStreamId`: `AddPlayerCommand` with `Sport "nfl"`, `Team "TB"` → `"nfl:tb"`.
+  - `KeyFor_InvalidTeam_ThrowsDomainValidation`: `Team "t:b"` → `DomainValidationException`.
 - [ ] **Step 2: Run** `dotnet test --filter FullyQualifiedName~KafkaCommandPublisherTests` — Expected: build FAIL.
 - [ ] **Step 3: Implement** the publisher and `AddCommandPublisher`.
 - [ ] **Step 4: Run** the same filter — Expected: PASS.
@@ -99,8 +99,8 @@ git commit -m "feat(infrastructure): publish depth chart commands to Kafka"
   ```csharp
   public abstract record CliRequest;
   public sealed record PublishRequest(DepthChartCommand Command) : CliRequest;
-  public sealed record ChartRequest(string Sport, string TeamId, DateTimeOffset? AsOf) : CliRequest;
-  public sealed record BelowRequest(string Sport, string TeamId, string Position, int PlayerId, DateTimeOffset? AsOf) : CliRequest;
+  public sealed record ChartRequest(string Sport, string Team, DateTimeOffset? AsOf) : CliRequest;
+  public sealed record BelowRequest(string Sport, string Team, string Position, int PlayerId, DateTimeOffset? AsOf) : CliRequest;
   public sealed record DemoRequest : CliRequest;
   public sealed class CliUsageException(string message) : Exception(message);
   public static class CliParser
@@ -109,7 +109,7 @@ git commit -m "feat(infrastructure): publish depth chart commands to Kafka"
       public static CliRequest Parse(string[] args);
   }
   ```
-  `Parse` checks verb and arg count, parses ints and `--as-of` (`DateTimeOffset.TryParse`, invariant culture, assume UTC), then validates by constructing `Sport`, `TeamId`, `Position`, `PlayerId`, `Player` (for `add`), and rejects negative depth. Any `DomainValidationException` or parse failure is rethrown as `CliUsageException` whose message names the argument. `add` builds `AddPlayerCommand` with `PlayerPosition = null`; string fields are passed as typed (the Processor normalises).
+  `Parse` checks verb and arg count, parses ints and `--as-of` (`DateTimeOffset.TryParse`, invariant culture, assume UTC), then validates by constructing `Sport`, `Team`, `Position`, `Player` (for `add`), checks `playerId > 0` (for `remove` and `below`), and rejects negative depth. Any `DomainValidationException` or parse failure is rethrown as `CliUsageException` whose message names the argument. `add` builds `AddPlayerCommand` with `PlayerPosition = null`; string fields are passed as typed (the Processor normalises).
 
 - [ ] **Step 1: Write the failing tests:**
   - `Parse_Add_WithDepth`: `["add","NFL","tb","WR","1","Bob","0"]` → `PublishRequest` with `AddPlayerCommand { PlayerId 1, PlayerName "Bob", Depth 0, Position "WR" }` and non-empty `CommandId`.
@@ -145,9 +145,9 @@ git commit -m "feat(producer): rename console to Producer and parse CLI verbs"
 - Produces:
   - `public sealed record PlayerDto(int PlayerId, string Name)`
   - `public sealed class DepthChartApiClient(HttpClient http)`:
-    - `Task<Dictionary<string, List<PlayerDto>>> GetChartAsync(string sport, string teamId, DateTimeOffset? asOf, CancellationToken ct)`
-    - `Task<List<PlayerDto>> GetBelowAsync(string sport, string teamId, string position, int playerId, DateTimeOffset? asOf, CancellationToken ct)`
-    - `public static string ChartUri(string sport, string teamId, DateTimeOffset? asOf)` and `BelowUri(...)` — path segments and `asOf.ToString("O")` through `Uri.EscapeDataString`. Non-success status → `EnsureSuccessStatusCode` (Program reports it).
+    - `Task<Dictionary<string, List<PlayerDto>>> GetChartAsync(string sport, string team, DateTimeOffset? asOf, CancellationToken ct)`
+    - `Task<List<PlayerDto>> GetBelowAsync(string sport, string team, string position, int playerId, DateTimeOffset? asOf, CancellationToken ct)`
+    - `public static string ChartUri(string sport, string team, DateTimeOffset? asOf)` and `BelowUri(...)` — path segments and `asOf.ToString("O")` through `Uri.EscapeDataString`. Non-success status → `EnsureSuccessStatusCode` (Program reports it).
   - `public static class ChartFormatter`:
     - `string FormatIds(IEnumerable<PlayerDto> players)` → `"[2, 1, 3]"`, `"[]"`.
     - `string FormatChart(IReadOnlyDictionary<string, List<PlayerDto>> chart)` → one `"{POS}: {ids}"` line per position, in dictionary order, joined by `Environment.NewLine`.
@@ -177,7 +177,7 @@ git commit -m "feat(producer): add chart, below and demo verbs"
 **Files:**
 - Modify: `README.md` (currently empty)
 
-- [ ] **Step 1: Write `README.md`** with: what it is (one paragraph), prerequisites (.NET 10 SDK, Docker), the three run commands of spec §8, the CLI grammar of §7 with one example per verb, the two endpoints of §6, `dotnet build` / `dotnet test`, the assumptions of §3 (free-form sport/position, normalisation rules, `TeamId` charset, insert-and-bump and move semantics, natural position informational only), and the limits of §11.
+- [ ] **Step 1: Write `README.md`** with: what it is (one paragraph), prerequisites (.NET 10 SDK, Docker), the three run commands of spec §8, the CLI grammar of §7 with one example per verb, the two endpoints of §6, `dotnet build` / `dotnet test`, the assumptions of §3 (free-form sport/position, normalisation rules, `Team` charset, insert-and-bump and move semantics, natural position informational only), and the limits of §11.
 - [ ] **Step 2: Manual end-to-end:**
 ```bash
 docker compose up -d

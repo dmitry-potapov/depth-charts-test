@@ -26,7 +26,7 @@ Brief item 5 says not to spend effort on a database-backed solution. Persistence
 |---|---|
 | Kafka role | Kafka carries **commands** only. The EF event store is the source of truth. |
 | Reads | The Processor exposes REST endpoints and the Producer calls them. |
-| Aggregate | One `DepthChart` per team, keyed by `(sport, teamId)`. |
+| Aggregate | One `DepthChart` per team, keyed by `(sport, team)`. |
 | Sports and positions | **Not restricted.** Sport and position are free-form identifiers, so adding a sport takes no code. NFL and MLB work because nothing blocks them. |
 
 ## 2. Solution structure
@@ -35,7 +35,7 @@ The dependency direction is Domain ← Application ← Infrastructure ← Api/Pr
 
 | Project | Contents |
 |---|---|
-| `src/DepthCharts.Domain` | `Sport`, `Position`, `PlayerId`, `Player`, the `DepthChart` aggregate and its domain events. No package references. |
+| `src/DepthCharts.Domain` | `Sport`, `Team`, `Position`, `Player`, the `DepthChart` aggregate and its domain events. No package references. |
 | `src/DepthCharts.Application` | Command handlers, query handlers, the `IEventStore` and `ICommandPublisher` interfaces, and the message contracts (`AddPlayerCommand`, `RemovePlayerCommand`). |
 | `src/DepthCharts.Infrastructure` | `EventStoreDbContext` (EF Core InMemory), `EfEventStore`, `KafkaCommandPublisher`, `KafkaCommandConsumer` (`BackgroundService`) and `DependencyInjection.cs`. Packages: `Microsoft.EntityFrameworkCore.InMemory`, `Confluent.Kafka`, `Microsoft.Extensions.Hosting.Abstractions`. |
 | `src/DepthCharts.Api` (new) | The **Processor**: an ASP.NET Core minimal API host that runs the consumer and maps the read endpoints. |
@@ -51,13 +51,12 @@ Each value type enforces its own invariants and throws in its constructor.
 
 - `Sport`: a non-empty string, trimmed and upper-cased (`NFL`, `MLB`, …).
 - `Position`: a non-empty string, trimmed and upper-cased (`WR`, `1B`, …). It is not checked against the sport.
-- `TeamId`: a non-empty string, trimmed and lower-cased. It may contain only `[a-z0-9-]`, which keeps `:` out of stream ids so they can't collide.
-- `PlayerId`: a positive integer.
-- `Player(PlayerId Id, string Name, Position? NaturalPosition)`: the name must be non-empty. The natural position is informational only, because a player may appear on any position's chart.
+- `Team`: a non-empty string, trimmed and lower-cased. It may contain only `[a-z0-9-]`, which keeps `:` out of stream ids so they can't collide.
+- `Player(int Id, string Name, Position? NaturalPosition)`: the id must be positive and the name non-empty. The natural position is informational only, because a player may appear on any position's chart.
 
 ### Aggregate: `DepthChart`
 
-- Identity: `(Sport, TeamId)`. The stream id is `"{sport}:{teamId}"` in lower case, for example `nfl:tb`.
+- Identity: `(Sport, Team)`. The stream id is `"{sport}:{team}"` in lower case, for example `nfl:tb`.
 - State: `Dictionary<Position, List<Player>>`, where the list order is the depth.
 - `Version`: the number of events applied.
 
@@ -68,23 +67,24 @@ Commands are methods that validate and return new events. They do not mutate sta
   - If `depth` is null or greater than the current count, the player is added at the end.
   - If a player already holds that depth, they and everyone below move down one place. The last player entered gets the spot.
   - If the player is already on that position's chart, they are moved: removed, then inserted at the new depth, which is resolved against the list *without* them.
-  - Emits `PlayerAddedToDepthChart(Sport, TeamId, Player, Position, ResolvedDepth, OccurredAt)`.
-- `RemovePlayer(PlayerId, Position, DateTimeOffset occurredAt)`
+  - Emits `PlayerAddedToDepthChart(Sport, Team, Player, Position, ResolvedDepth, OccurredAt)`.
+- `RemovePlayer(int playerId, Position, DateTimeOffset occurredAt)`
+  - A non-positive `playerId` throws.
   - If the player is not on that chart, nothing happens and no event is emitted.
-  - Otherwise emits `PlayerRemovedFromDepthChart(Sport, TeamId, PlayerId, Position, OccurredAt)`.
+  - Otherwise emits `PlayerRemovedFromDepthChart(Sport, Team, int PlayerId, Position, OccurredAt)`.
 - `Apply(event)` mutates state. Replaying a stream means calling `Apply` for each event in order.
 
 Queries are pure reads of the state:
 
 - `GetFullChart()` returns `IReadOnlyDictionary<Position, IReadOnlyList<Player>>`.
-- `GetPlayersUnder(PlayerId, Position)` returns the players after this one in the list, or `[]` if the player or position is absent.
+- `GetPlayersUnder(int playerId, Position)` returns the players after this one in the list, or `[]` if the player or position is absent. A non-positive `playerId` throws.
 
 ### Events
 
-Events are immutable records that implement `IDomainEvent { Sport Sport; TeamId TeamId; DateTimeOffset OccurredAt }`.
+Events are immutable records that implement `IDomainEvent { Sport Sport; Team Team; DateTimeOffset OccurredAt }`.
 
 - Each event records the **resolved** depth, so replaying it is deterministic and never re-runs the defaulting rules.
-- Each event carries its own `Sport` and `TeamId`, so history can later be filtered by team without parsing stream ids. `Apply` ignores both fields, because the aggregate already knows its identity.
+- Each event carries its own `Sport` and `Team`, so history can later be filtered by team without parsing stream ids. `Apply` ignores both fields, because the aggregate already knows its identity.
 
 ## 4. Application
 
@@ -107,8 +107,8 @@ public interface ICommandPublisher
 
 The contracts are shared by the Producer and the Processor and serialised as JSON with a `type` discriminator.
 
-- `AddPlayerCommand(Guid CommandId, string Sport, string TeamId, string Position, int PlayerId, string PlayerName, string? PlayerPosition, int? Depth)`
-- `RemovePlayerCommand(Guid CommandId, string Sport, string TeamId, string Position, int PlayerId)`
+- `AddPlayerCommand(Guid CommandId, string Sport, string Team, string Position, int PlayerId, string PlayerName, string? PlayerPosition, int? Depth)`
+- `RemovePlayerCommand(Guid CommandId, string Sport, string Team, string Position, int PlayerId)`
 
 ### Handlers
 
@@ -121,8 +121,8 @@ The contracts are shared by the Producer and the Processor and serialised as JSO
 
 There are two query handlers:
 
-- `GetFullDepthChartQuery(sport, teamId, asOf?)`
-- `GetPlayersUnderQuery(sport, teamId, position, playerId, asOf?)`
+- `GetFullDepthChartQuery(sport, team, asOf?)`
+- `GetPlayersUnderQuery(sport, team, position, playerId, asOf?)`
 
 Each one loads the stream with `asOf`, replays it, and reads the result. A stream with no events is an empty chart.
 
@@ -152,8 +152,8 @@ Each one loads the stream with `asOf`, replays it, and reads the result. A strea
 
 | Method | Route | Result |
 |---|---|---|
-| GET | `/depth-charts/{sport}/{teamId}?asOf={iso8601}` | `{ "WR": [ {playerId, name}, … ], "KR": [ … ] }` |
-| GET | `/depth-charts/{sport}/{teamId}/positions/{position}/players/{playerId}/below?asOf=` | `[ {playerId, name}, … ]` |
+| GET | `/depth-charts/{sport}/{team}?asOf={iso8601}` | `{ "WR": [ {playerId, name}, … ], "KR": [ … ] }` |
+| GET | `/depth-charts/{sport}/{team}/positions/{position}/players/{playerId}/below?asOf=` | `[ {playerId, name}, … ]` |
 
 - Endpoints stay thin. They bind the request, call the query handler and map the result.
 - An invalid identifier (empty, or a non-positive player id) or an unparseable `asOf` returns `400` with ProblemDetails.
@@ -189,7 +189,7 @@ The README documents these steps and the assumptions in §3.
 
 | Layer | Tests |
 |---|---|
-| Domain | Emitted events carry the chart's `Sport` and `TeamId`. `TeamId` rejects empty values and `:`. The brief's example end to end. Insert-and-bump. Null depth and depth past the end both append. A negative depth throws. Moving a player within a position. Removing a player who is absent emits no event. `GetPlayersUnder` for the last player, an absent player and an absent position. The same player on several positions. MLB positions such as `1B`. Value-type invariants. |
+| Domain | Emitted events carry the chart's `Sport` and `Team`. `Team` rejects empty values and `:`. The brief's example end to end. Insert-and-bump. Null depth and depth past the end both append. A negative depth throws. Moving a player within a position. Removing a player who is absent emits no event. `GetPlayersUnder` for the last player, an absent player and an absent position. The same player on several positions. MLB positions such as `1B`. Value-type invariants, and a non-positive player id throws in `Player`, `RemovePlayer` and `GetPlayersUnder`. |
 | Event sourcing | Replaying the emitted events rebuilds an equal state. Loading with `asOf` between events gives the earlier chart. |
 | Application + EF store | A handler appends events. A duplicate `CommandId` is ignored. A stale `expectedVersion` throws `ConcurrencyException`. A no-op remove appends nothing. |
 | Api | `WebApplicationFactory` with `Kafka:ConsumerEnabled=false`, the store seeded through the handler: chart, below, `asOf`, and 400 cases. |
@@ -209,7 +209,7 @@ Each stage ends with `dotnet build` and `dotnet test` passing, and is committed 
 
 | # | Stage | Scope | Done when |
 |---|---|---|---|
-| 1 | **Domain** | The value types (`Sport`, `TeamId`, `Position`, `PlayerId`, `Player`), the `DepthChart` aggregate, the events, and `Apply`/replay (§3). | The domain and event-sourcing tests from §9 pass. All four brief use cases work in memory, and the brief's example gives `WR: [2,1,3]`, `KR: [1]`. |
+| 1 | **Domain** | The value types (`Sport`, `Team`, `Position`) and `Player`, the `DepthChart` aggregate, the events, and `Apply`/replay (§3). | The domain and event-sourcing tests from §9 pass. All four brief use cases work in memory, and the brief's example gives `WR: [2,1,3]`, `KR: [1]`. |
 | 2 | **Application + event store** | The `IEventStore` and `ICommandPublisher` interfaces, the message contracts, the command handler and the query handlers (§4). Then `EventStoreDbContext`, `EfEventStore` and `DependencyInjection.cs` in Infrastructure (§5.1). No Kafka yet. | The Application and EF store tests pass: append, idempotency, concurrency, no-op remove, and `asOf`. |
 | 3 | **Processor** | The new `DepthCharts.Api` project with the two endpoints (§6), `KafkaCommandConsumer` (§5.2), Kafka configuration and `docker-compose.yml`. | The Api endpoint tests pass with the consumer off. Manual smoke test: `docker compose up`, start the Api, send one command JSON with `kafka-console-producer`, and `GET` shows the player. |
 | 4 | **Producer** | `KafkaCommandPublisher`, renaming `DepthCharts.Console` to `DepthCharts.Producer`, the CLI verbs and `demo` (§7), and the README (§8). | Unit tests for argument parsing pass. With Kafka and the Api running, `producer demo` prints the brief's expected output. |

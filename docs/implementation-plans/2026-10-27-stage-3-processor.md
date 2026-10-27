@@ -23,7 +23,7 @@
 
 ## Review Focus
 
-1. A team id with a disallowed character in the URL (`/depth-charts/nfl/t:b`) gives 400, not 500. (Task 1 test `Chart_InvalidTeamId_400`.)
+1. A team id with a disallowed character in the URL (`/depth-charts/nfl/t:b`) gives 400, not 500. (Task 1 test `Chart_InvalidTeam_400`.)
 2. `asOf` that is valid ISO-8601 with an offset (`2026-10-27T10:00:00+02:00`) compares as an instant, not wall-clock text. (Task 1 test `Chart_AsOfWithOffset_ComparesAsInstant`.)
 3. One bad message in the topic doesn't stop later good messages from applying. (Task 2 test `Process_BadMessageThenGood_GoodApplied`.)
 4. Restarting the Processor replays the same topic into the same history, because `occurredAt` comes from the message, not the clock. (Task 2 test `Process_UsesMessageTimestamp`.)
@@ -64,15 +64,15 @@ tests/DepthCharts.Tests/
 - Produces:
   - `public sealed record PlayerResponse(int PlayerId, string Name)`
   - `public static IEndpointRouteBuilder MapDepthChartEndpoints(this IEndpointRouteBuilder app)`:
-    - `GET /depth-charts/{sport}/{teamId}` → `Dictionary<string, PlayerResponse[]>` keyed by `Position.Value`, in `GetFullChart()` order.
-    - `GET /depth-charts/{sport}/{teamId}/positions/{position}/players/{playerId:int}/below` → `PlayerResponse[]`.
+    - `GET /depth-charts/{sport}/{team}` → `Dictionary<string, PlayerResponse[]>` keyed by `Position.Value`, in `GetFullChart()` order.
+    - `GET /depth-charts/{sport}/{team}/positions/{position}/players/{playerId:int}/below` → `PlayerResponse[]`.
     - Both take `string? asOf` from the query; null/empty → no filter; otherwise `DateTimeOffset.TryParse(asOf, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out …)`, failure → `TypedResults.Problem(statusCode: 400, title: "Invalid asOf")`. This is boundary validation, the only logic allowed in the endpoint besides mapping.
   - `DomainValidationExceptionHandler : IExceptionHandler` → status 400, writes ProblemDetails via `IProblemDetailsService` with `Detail = exception.Message`; returns `false` for other exceptions.
   - `Program.cs`: `AddProblemDetails()`, `AddExceptionHandler<DomainValidationExceptionHandler>()`, `AddApplication()`, `AddInfrastructure(builder.Configuration)`; `UseExceptionHandler()`; `MapDepthChartEndpoints()`.
   - `launchSettings.json`: one `http` profile, `applicationUrl` `http://localhost:5000`.
   - `ApiFactory : WebApplicationFactory<Program>` with `builder.UseSetting("Kafka:ConsumerEnabled", "false")`, and `Task SeedAsync(DepthChartCommand command, DateTimeOffset occurredAt)` that resolves `DepthChartCommandHandler` from a new scope of `Services`.
 
-  `{playerId:int}` makes a non-numeric id 404 (route mismatch). Non-positive ids reach `PlayerId` and become 400.
+  `{playerId:int}` makes a non-numeric id 404 (route mismatch). Non-positive ids are rejected by the domain (`DomainValidationException`) and become 400.
 
 - [ ] **Step 1: Write the failing tests** (`IClassFixture<ApiFactory>` is fine; use a distinct team id per test so they don't share streams):
   - `Chart_BriefExample_ShapeAndOrder`: seed the brief's four adds; `GET /depth-charts/nfl/t1` → 200; raw JSON property order `WR` then `KR`; `WR` = `[{"playerId":2,"name":"Alice"},{"playerId":1,"name":"Bob"},{"playerId":3,"name":"Charlie"}]`.
@@ -81,7 +81,7 @@ tests/DepthCharts.Tests/
   - `Below_UnknownPlayer_EmptyArray`: → 200, body `[]`.
   - `Chart_AsOf_ReturnsEarlierChart`: seed at `T0` and `T0+1h`; `?asOf=` `T0+30m` (URL-encoded `O` format) → one player.
   - `Chart_AsOfWithOffset_ComparesAsInstant`: seed at `2026-10-27T09:00:00Z`; `asOf=2026-10-27T10:30:00+02:00` (08:30Z) → `{}`; `asOf=2026-10-27T11:30:00+02:00` → one player.
-  - `Chart_InvalidTeamId_400`: `/depth-charts/nfl/t:b` → 400, `Content-Type` `application/problem+json`.
+  - `Chart_InvalidTeam_400`: `/depth-charts/nfl/t:b` → 400, `Content-Type` `application/problem+json`.
   - `Below_NonPositivePlayerId_400`: `…/players/0/below` → 400 problem+json.
   - `Chart_UnparseableAsOf_400`: `?asOf=yesterday` → 400 problem+json.
 - [ ] **Step 2: Run** `dotnet test --filter FullyQualifiedName~DepthChartEndpointsTests` — Expected: build FAIL.
@@ -115,7 +115,7 @@ git commit -m "feat(api): add depth chart read endpoints"
   - `Process_ValidCommand_Applied`: JSON from `CommandSerializer.Serialize(add Bob)` → store has one event.
   - `Process_UsesMessageTimestamp`: timestamp `T0` → loaded event `OccurredAt == T0`.
   - `Process_BadJson_LogsWarningAndSkips`: `"garbage"` → no throw, one Warning, store empty.
-  - `Process_InvalidDomainValue_LogsWarningAndSkips`: add with `TeamId = "t:b"` → no throw, one Warning.
+  - `Process_InvalidDomainValue_LogsWarningAndSkips`: add with `Team = "t:b"` → no throw, one Warning.
   - `Process_UnexpectedException_LogsError`: register an `IEventStore` fake that throws `InvalidOperationException` → no throw, one Error.
   - `Process_BadMessageThenGood_GoodApplied`.
 - [ ] **Step 2: Run** `dotnet test --filter FullyQualifiedName~CommandMessageProcessorTests` — Expected: build FAIL.
@@ -137,7 +137,7 @@ No code. Needs Docker. Record the outcome in the PR/hand-off note.
 - [ ] **Step 2:** `dotnet run --project src/DepthCharts.Api` (separate terminal) — Expected: listening on `http://localhost:5000`, no consumer errors.
 - [ ] **Step 3:** send one command:
 ```bash
-echo 'nfl:tb|{"type":"add-player","commandId":"6f1c2e1a-0000-4000-8000-000000000001","sport":"NFL","teamId":"tb","position":"QB","playerId":12,"playerName":"Tom Brady","playerPosition":"QB","depth":0}' \
+echo 'nfl:tb|{"type":"add-player","commandId":"6f1c2e1a-0000-4000-8000-000000000001","sport":"NFL","team":"tb","position":"QB","playerId":12,"playerName":"Tom Brady","playerPosition":"QB","depth":0}' \
   | docker compose exec -T kafka /opt/kafka/bin/kafka-console-producer.sh \
       --bootstrap-server localhost:9092 --topic depth-chart-commands \
       --property parse.key=true --property key.separator='|'

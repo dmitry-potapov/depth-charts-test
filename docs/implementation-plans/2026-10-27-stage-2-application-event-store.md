@@ -71,18 +71,18 @@ tests/DepthCharts.Tests/
     [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
     [JsonDerivedType(typeof(AddPlayerCommand), "add-player")]
     [JsonDerivedType(typeof(RemovePlayerCommand), "remove-player")]
-    public abstract record DepthChartCommand(Guid CommandId, string Sport, string TeamId, string Position);
-    public sealed record AddPlayerCommand(Guid CommandId, string Sport, string TeamId, string Position,
-        int PlayerId, string PlayerName, string? PlayerPosition, int? Depth) : DepthChartCommand(CommandId, Sport, TeamId, Position);
-    public sealed record RemovePlayerCommand(Guid CommandId, string Sport, string TeamId, string Position,
-        int PlayerId) : DepthChartCommand(CommandId, Sport, TeamId, Position);
+    public abstract record DepthChartCommand(Guid CommandId, string Sport, string Team, string Position);
+    public sealed record AddPlayerCommand(Guid CommandId, string Sport, string Team, string Position,
+        int PlayerId, string PlayerName, string? PlayerPosition, int? Depth) : DepthChartCommand(CommandId, Sport, Team, Position);
+    public sealed record RemovePlayerCommand(Guid CommandId, string Sport, string Team, string Position,
+        int PlayerId) : DepthChartCommand(CommandId, Sport, Team, Position);
     ```
   - `public static class CommandSerializer { string Serialize(DepthChartCommand); DepthChartCommand Deserialize(string json); }` — one static `JsonSerializerOptions(JsonSerializerDefaults.Web) { AllowOutOfOrderMetadataProperties = true }`. `Deserialize` throws `JsonException` on bad input or a null result. Stage 3 consumer and stage 4 publisher both use this.
 
 - [ ] **Step 1: Write the failing tests:**
   - `RoundTrip_AddPlayer`: serialise an `AddPlayerCommand` with all fields, deserialise → `Assert.Equal(original, result)`; JSON contains `"type":"add-player"` and `"playerName"`.
   - `RoundTrip_RemovePlayer`: same, `"type":"remove-player"`.
-  - `Deserialize_TypeNotFirst_Works`: `{"commandId":"<guid>","sport":"NFL","teamId":"tb","position":"WR","playerId":1,"playerName":"Bob","type":"add-player"}` → `AddPlayerCommand` with `Depth == null`.
+  - `Deserialize_TypeNotFirst_Works`: `{"commandId":"<guid>","sport":"NFL","team":"tb","position":"WR","playerId":1,"playerName":"Bob","type":"add-player"}` → `AddPlayerCommand` with `Depth == null`.
   - `[Theory] Deserialize_Invalid_ThrowsJsonException` with `"not json"`, `"{}"`, `"null"`, `{"type":"nope"}`.
 - [ ] **Step 2: Run** `dotnet test --filter FullyQualifiedName~CommandSerializerTests` — Expected: build FAIL.
 - [ ] **Step 3: Implement** the five files.
@@ -148,8 +148,8 @@ git commit -m "feat(infrastructure): add EF Core InMemory event store"
 - Consumes: Task 1 contracts and `IEventStore`; `TestStore.Create()` (Task 2); stage 1 `DepthChart`.
 - Produces:
   - `public sealed class DepthChartCommandHandler(IEventStore store)` → `Task HandleAsync(DepthChartCommand command, DateTimeOffset occurredAt, CancellationToken ct)`. The four steps of spec §4; value types are built before loading, so invalid input throws `DomainValidationException` without touching the store. An unknown command subtype throws `InvalidOperationException`.
-  - `public sealed record GetFullDepthChartQuery(string Sport, string TeamId, DateTimeOffset? AsOf)`
-  - `public sealed record GetPlayersUnderQuery(string Sport, string TeamId, string Position, int PlayerId, DateTimeOffset? AsOf)`
+  - `public sealed record GetFullDepthChartQuery(string Sport, string Team, DateTimeOffset? AsOf)`
+  - `public sealed record GetPlayersUnderQuery(string Sport, string Team, string Position, int PlayerId, DateTimeOffset? AsOf)`
   - `public sealed class DepthChartQueryHandler(IEventStore store)`:
     - `Task<IReadOnlyDictionary<Position, IReadOnlyList<Player>>> GetFullChartAsync(GetFullDepthChartQuery query, CancellationToken ct)`
     - `Task<IReadOnlyList<Player>> GetPlayersUnderAsync(GetPlayersUnderQuery query, CancellationToken ct)`
@@ -160,7 +160,7 @@ git commit -m "feat(infrastructure): add EF Core InMemory event store"
   - `Handle_AddPlayer_AppendsEvent`: one `AddPlayerCommand` → `LoadAsync("nfl:tb", null)` has one `PlayerAddedToDepthChart` with `OccurredAt == occurredAt`.
   - `Handle_DuplicateCommandId_Ignored`: add Bob WR (id X), then remove Bob WR, then replay the add with id X → stream has 2 events and Bob is not on WR.
   - `Handle_NoOpRemove_AppendsNothing`: remove on empty chart → stream empty, `HasProcessedAsync` false.
-  - `Handle_InvalidInput_ThrowsDomainValidation`: `TeamId = "t:b"` → `DomainValidationException`; `PlayerId = 0` → same; stream empty.
+  - `Handle_InvalidInput_ThrowsDomainValidation`: `Team = "t:b"` → `DomainValidationException`; `PlayerId = 0` → same; stream empty.
   - `Handle_DifferentCasing_SameStream`: add via `("nfl","TB")`, add via `("NFL","tb")` → `"nfl:tb"` has 2 events.
   - `Handle_StaleVersion_PropagatesConcurrencyException`: use a small fake `IEventStore` in the test file whose `LoadAsync` returns `[]` but `AppendAsync` delegates to a real store already holding one event → `ConcurrencyException`.
 
@@ -169,7 +169,7 @@ git commit -m "feat(infrastructure): add EF Core InMemory event store"
   - `PlayersUnder_BriefExample`: Alice WR → `[1,3]`.
   - `FullChart_AsOf_ReturnsEarlierChart`: adds at `T0`, `T0+1m`; `AsOf = T0+30s` → only the first player.
   - `UnknownTeam_EmptyResults`: both queries return empty.
-  - `InvalidQueryInput_ThrowsDomainValidation`: `TeamId = ""` → `DomainValidationException`.
+  - `InvalidQueryInput_ThrowsDomainValidation`: `Team = ""` → `DomainValidationException`.
 - [ ] **Step 2: Run** `dotnet test --filter "FullyQualifiedName~HandlerTests"` — Expected: build FAIL.
 - [ ] **Step 3: Implement** the handlers, query records and `AddApplication`.
 - [ ] **Step 4: Run** `dotnet build && dotnet test` — Expected: all PASS.
