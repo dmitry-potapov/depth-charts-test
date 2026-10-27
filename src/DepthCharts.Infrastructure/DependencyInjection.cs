@@ -1,4 +1,5 @@
 using DepthCharts.Application.Abstractions;
+using DepthCharts.Infrastructure.Messaging;
 using DepthCharts.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -9,7 +10,6 @@ namespace DepthCharts.Infrastructure;
 
 public static class DependencyInjection
 {
-    // configuration is unused until stage 3; kept so the Api call site never changes.
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         // A per-provider root keeps each host (and each WebApplicationFactory) isolated.
@@ -17,6 +17,9 @@ public static class DependencyInjection
         services.AddDbContext<EventStoreDbContext>((sp, o) =>
             o.UseInMemoryDatabase("depth-charts", sp.GetRequiredService<InMemoryDatabaseRoot>()));
         services.AddScoped<IEventStore, EfEventStore>();
+        services.Configure<KafkaOptions>(configuration.GetSection("Kafka"));
+        services.AddSingleton<CommandMessageProcessor>();
+        services.AddHostedService<KafkaCommandConsumer>();
         return services;
     }
 }

@@ -8,6 +8,9 @@ namespace DepthCharts.Tests.Api;
 
 public sealed class ApiFactory : WebApplicationFactory<Program>
 {
+    protected override void ConfigureWebHost(IWebHostBuilder builder) =>
+        builder.UseSetting("Kafka:ConsumerEnabled", "false");
+
     public async Task SeedAsync(DepthChartCommand command, DateTimeOffset occurredAt)
     {
         using var scope = Services.CreateScope();
