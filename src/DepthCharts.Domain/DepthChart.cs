@@ -30,6 +30,8 @@ public sealed class DepthChart
 
     public IReadOnlyList<IDomainEvent> AddPlayer(Player player, Position position, int? depth, DateTimeOffset occurredAt)
     {
+        if (player is null) throw new DomainValidationException("Player is required.");
+        if (position is null) throw new DomainValidationException("Position is required.");
         if (depth < 0) throw new DomainValidationException("Depth must not be negative.");
 
         var others = _chart.TryGetValue(position, out var list)
@@ -39,21 +41,29 @@ public sealed class DepthChart
         return [new PlayerAddedToDepthChart(Sport, TeamId, player, position, resolved, occurredAt)];
     }
 
-    public IReadOnlyList<IDomainEvent> RemovePlayer(PlayerId playerId, Position position, DateTimeOffset occurredAt) =>
-        _chart.TryGetValue(position, out var list) && list.Any(p => p.Id == playerId)
+    public IReadOnlyList<IDomainEvent> RemovePlayer(PlayerId playerId, Position position, DateTimeOffset occurredAt)
+    {
+        if (playerId is null) throw new DomainValidationException("PlayerId is required.");
+        if (position is null) throw new DomainValidationException("Position is required.");
+
+        return _chart.TryGetValue(position, out var list) && list.Any(p => p.Id == playerId)
             ? [new PlayerRemovedFromDepthChart(Sport, TeamId, playerId, position, occurredAt)]
             : [];
+    }
 
     public void Apply(IDomainEvent @event)
     {
+        if (@event.Sport != Sport || @event.TeamId != TeamId)
+            throw new InvalidOperationException($"Event for {StreamIdFor(@event.Sport, @event.TeamId)} cannot be applied to {StreamId}.");
+
         switch (@event)
         {
             case PlayerAddedToDepthChart added:
                 if (!_chart.TryGetValue(added.Position, out var list))
                     _chart[added.Position] = list = [];
                 list.RemoveAll(p => p.Id == added.Player.Id);
-                // Clamp: a filtered or corrupt stream may be missing earlier events.
-                list.Insert(Math.Min(added.Depth, list.Count), added.Player);
+                // Clamp both ends: a filtered or corrupt stream may carry any depth.
+                list.Insert(Math.Clamp(added.Depth, 0, list.Count), added.Player);
                 // A player has one name across all positions: latest event wins.
                 foreach (var other in _chart.Values)
                     for (var i = 0; i < other.Count; i++)
@@ -75,6 +85,8 @@ public sealed class DepthChart
 
     public IReadOnlyList<Player> GetPlayersUnder(PlayerId playerId, Position position)
     {
+        if (playerId is null) throw new DomainValidationException("PlayerId is required.");
+        if (position is null) throw new DomainValidationException("Position is required.");
         if (!_chart.TryGetValue(position, out var list)) return [];
         var index = list.FindIndex(p => p.Id == playerId);
         return index < 0 ? [] : list.Skip(index + 1).ToList();

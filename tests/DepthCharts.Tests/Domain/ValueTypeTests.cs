@@ -31,6 +31,14 @@ public class ValueTypeTests
         Assert.Throws<DomainValidationException>(() => new TeamId(value));
 
     [Theory]
+    [InlineData("K")]
+    [InlineData("N:FL")]
+    [InlineData("$x")]
+    [InlineData("N\nFL")]
+    public void Sport_RejectsInvalid(string value) =>
+        Assert.Throws<DomainValidationException>(() => new Sport(value));
+
+    [Theory]
     [InlineData("")]
     [InlineData("   ")]
     public void Sport_And_Position_RejectEmpty(string value)

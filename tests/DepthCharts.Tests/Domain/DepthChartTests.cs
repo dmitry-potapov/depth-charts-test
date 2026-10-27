@@ -215,6 +215,37 @@ public class DepthChartTests
     }
 
     [Fact]
+    public void Apply_NegativeDepth_ClampsWithoutLosingPlayers()
+    {
+        var c = Chart("WR", 1, 2);
+        c.Apply(new PlayerAddedToDepthChart(NFL, TB, Pl(1), P("WR"), -1, T0));
+        Assert.Equal([1, 2], Ids(c, "WR"));
+        Assert.Equal(3, c.Version);
+    }
+
+    [Fact]
+    public void Apply_EventForOtherTeam_Throws()
+    {
+        var c = Chart("WR", 1);
+        var foreign = new PlayerAddedToDepthChart(NFL, new TeamId("ne"), Pl(2), P("WR"), 0, T0);
+        Assert.Throws<InvalidOperationException>(() => c.Apply(foreign));
+        Assert.Throws<InvalidOperationException>(() => DepthChart.Replay(NFL, TB, [foreign]));
+        Assert.Equal([1], Ids(c, "WR"));
+    }
+
+    [Fact]
+    public void Methods_RejectNullArguments()
+    {
+        var c = Chart("WR", 1);
+        Assert.Throws<DomainValidationException>(() => c.AddPlayer(null!, P("WR"), null, T0));
+        Assert.Throws<DomainValidationException>(() => c.AddPlayer(Pl(2), null!, null, T0));
+        Assert.Throws<DomainValidationException>(() => c.RemovePlayer(null!, P("WR"), T0));
+        Assert.Throws<DomainValidationException>(() => c.RemovePlayer(Id(1), null!, T0));
+        Assert.Throws<DomainValidationException>(() => c.GetPlayersUnder(null!, P("WR")));
+        Assert.Throws<DomainValidationException>(() => c.GetPlayersUnder(Id(1), null!));
+    }
+
+    [Fact]
     public void StreamIdFor_IsLowerCase() =>
         Assert.Equal("nfl:tb", DepthChart.StreamIdFor(new Sport("NFL"), new TeamId("TB")));
 }
