@@ -15,6 +15,13 @@ public sealed class DepthChart(Sport sport, TeamId teamId)
     public static string StreamIdFor(Sport sport, TeamId teamId) =>
         $"{sport.Value}:{teamId.Value}".ToLowerInvariant();
 
+    public static DepthChart Replay(Sport sport, TeamId teamId, IEnumerable<IDomainEvent> events)
+    {
+        var chart = new DepthChart(sport, teamId);
+        foreach (var e in events) chart.Apply(e);
+        return chart;
+    }
+
     public IReadOnlyList<IDomainEvent> AddPlayer(Player player, Position position, int? depth, DateTimeOffset occurredAt)
     {
         if (depth < 0) throw new DomainValidationException("Depth must not be negative.");
