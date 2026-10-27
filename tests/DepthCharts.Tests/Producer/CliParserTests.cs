@@ -64,6 +64,15 @@ public class CliParserTests
     }
 
     [Fact]
+    public void Parse_Below_WithAsOf()
+    {
+        var below = Assert.IsType<BelowRequest>(
+            CliParser.Parse(["below", "NFL", "tb", "WR", "2", "--as-of", "2026-10-27T08:00:00Z"]));
+
+        Assert.Equal(new DateTimeOffset(2026, 10, 27, 8, 0, 0, TimeSpan.Zero), below.AsOf);
+    }
+
+    [Fact]
     public void Parse_Demo() => Assert.IsType<DemoRequest>(CliParser.Parse(["demo"]));
 
     [Theory]
@@ -73,6 +82,15 @@ public class CliParserTests
     [InlineData("add NFL tb WR x Bob")]
     [InlineData("chart NFL tb --as-of yesterday")]
     [InlineData("chart NFL tb --as-of 10/11/2026")]
+    [InlineData("below NFL tb WR 2 --as-of yesterday")]
+    [InlineData("below NFL tb WR 2 --asof 2026-10-27T08:00:00Z")]
+    [InlineData("below NFL tb WR 2 --as-of 2026-10-27T08:00:00Z extra")]
+    [InlineData("chart NFL tb --as-of 2026-10-27T08:00:00Z extra")]
+    [InlineData("chart NFL tb --asof 2026-10-27T08:00:00Z")]
+    [InlineData("remove NFL tb WR 0")]
+    [InlineData("remove NFL tb WR -1")]
+    [InlineData("below NFL tb WR 0")]
+    [InlineData("below NFL tb WR -1")]
     public void Parse_InvalidValues_UsageError(string line) =>
         Assert.Throws<CliUsageException>(() => CliParser.Parse(line.Split(' ')));
 
