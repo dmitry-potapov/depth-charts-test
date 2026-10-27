@@ -203,7 +203,18 @@ Out of scope:
 - Retry and DLQ.
 - Durable storage.
 
-## 10. Risks and limits
+## 10. Implementation stages
+
+Each stage ends with `dotnet build` and `dotnet test` passing, and is committed on its own. Every stage depends only on the stages before it.
+
+| # | Stage | Scope | Done when |
+|---|---|---|---|
+| 1 | **Domain** | The value types (`Sport`, `TeamId`, `Position`, `PlayerId`, `Player`), the `DepthChart` aggregate, the events, and `Apply`/replay (§3). | The domain and event-sourcing tests from §9 pass. All four brief use cases work in memory, and the brief's example gives `WR: [2,1,3]`, `KR: [1]`. |
+| 2 | **Application + event store** | The `IEventStore` and `ICommandPublisher` interfaces, the message contracts, the command handler and the query handlers (§4). Then `EventStoreDbContext`, `EfEventStore` and `DependencyInjection.cs` in Infrastructure (§5.1). No Kafka yet. | The Application and EF store tests pass: append, idempotency, concurrency, no-op remove, and `asOf`. |
+| 3 | **Processor** | The new `DepthCharts.Api` project with the two endpoints (§6), `KafkaCommandConsumer` (§5.2), Kafka configuration and `docker-compose.yml`. | The Api endpoint tests pass with the consumer off. Manual smoke test: `docker compose up`, start the Api, send one command JSON with `kafka-console-producer`, and `GET` shows the player. |
+| 4 | **Producer** | `KafkaCommandPublisher`, renaming `DepthCharts.Console` to `DepthCharts.Producer`, the CLI verbs and `demo` (§7), and the README (§8). | Unit tests for argument parsing pass. With Kafka and the Api running, `producer demo` prints the brief's expected output. |
+
+## 11. Risks and limits
 
 - History lives only while the topic does. If the topic retention expires or the topic is deleted, history is lost on the next restart.
 - Replaying from the beginning on every start makes startup O(total commands). That is fine at this scale. The upgrade is a durable store plus committed offsets.
