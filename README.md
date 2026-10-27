@@ -36,7 +36,17 @@ Commands are `AddPlayerCommand` and `RemovePlayerCommand`. `CommandSerializer` r
 
 `DepthChartQueryHandler` has `GetFullChartAsync` and `GetPlayersUnderAsync`. Each takes an optional `AsOf`, replays the stream up to that time and reads the result. An unknown team gives empty results.
 
-`AddApplication()` and `AddInfrastructure(configuration)` register the handlers and the store.
+`AddApplication()` registers the handlers. `AddInfrastructure(configuration)` registers the store, binds `KafkaOptions` to the `Kafka` section and adds `KafkaCommandConsumer` as a hosted service.
+
+## Kafka consumer
+
+`KafkaCommandConsumer` reads command JSON from the `Kafka:Topic` topic and passes each message to `CommandMessageProcessor`, which deserializes it and calls `DepthChartCommandHandler` in a new scope.
+
+- Every start uses a new consumer group, reads from the earliest offset and never commits, so the whole topic is replayed into the in-memory store.
+- The Kafka message timestamp becomes the event's `occurredAt`, so a replay gives the same `asOf` results. A message with no timestamp is skipped with a warning; the consumer never uses the current time instead.
+- There is no retry and no dead-letter topic. Tombstones, bad JSON and `DomainValidationException` are logged as warnings and skipped. Other errors, including `ConcurrencyException`, are logged as errors and skipped. Later messages are still applied.
+- A non-fatal `ConsumeException` is logged and consuming goes on. A fatal one is rethrown and stops the host. Cancellation stops the loop without logging an error.
+- With `Kafka:ConsumerEnabled` set to `false` the consumer does not run.
 
 ## Event store
 
@@ -71,4 +81,4 @@ dotnet run --project src/DepthCharts.Api
 
 ## Testing
 
-xUnit tests are in `tests/DepthCharts.Tests`. `Domain/` covers the value types, the `DepthChart` commands and queries, and replay. `Application/` covers the command serializer and the command and query handlers (idempotency, no-op and stale-version cases, `asOf`). `Infrastructure/` covers `EfEventStore` and the DI registration. `Api/` calls the endpoints through `WebApplicationFactory` (`ApiFactory.SeedAsync` records commands first) and covers the response shape, empty results, `asOf` formats and 400s. `TestStore.Create()` gives a fresh in-memory store.
+xUnit tests are in `tests/DepthCharts.Tests`. `Domain/` covers the value types, the `DepthChart` commands and queries, and replay. `Application/` covers the command serializer and the command and query handlers (idempotency, no-op and stale-version cases, `asOf`). `Infrastructure/` covers `EfEventStore`, the DI registration, `CommandMessageProcessor` (applied, skipped and logged messages, cancellation) and `KafkaCommandConsumer`'s loop with a fake `consume` function (timestamps, consume errors, the disabled switch). No test needs a running broker. `Api/` calls the endpoints through `WebApplicationFactory`. `ApiFactory` turns the consumer off, and `ApiFactory.SeedAsync` records commands before each call. These tests cover the response shape, empty results, `asOf` formats and 400s. `TestStore.Create()` gives a fresh in-memory store.
