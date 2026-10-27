@@ -1,6 +1,6 @@
 # Depth Charts
 
-Event-sourced sports depth charts on .NET 10 (Clean Architecture). The Domain and Application layers and an in-memory event store are implemented so far; there are no endpoints, Kafka or configuration yet.
+Event-sourced sports depth charts on .NET 10 (Clean Architecture). The Domain and Application layers, an in-memory event store and read-only HTTP endpoints are implemented so far; there is no Kafka consumer yet, so nothing writes commands outside the tests.
 
 ## Domain rules
 
@@ -44,13 +44,31 @@ Commands are `AddPlayerCommand` and `RemovePlayerCommand`. `CommandSerializer` r
 
 The InMemory provider enforces no unique index or transaction, so this is only correct with a single sequential consumer. A real deployment needs a relational provider with unique `(StreamId, Version)` and unique `ProcessedCommand.CommandId`.
 
+## Endpoints
+
+`DepthCharts.Api` is a minimal API. Both endpoints are read-only and take an optional `asOf` query parameter.
+
+| Method | Route | Returns |
+|--------|-------|---------|
+| `GET` | `/depth-charts/{sport}/{team}` | An object keyed by position, in `GetFullChart` order, each an array of `{ playerId, name }`. Unknown team → `{}`. |
+| `GET` | `/depth-charts/{sport}/{team}/positions/{position}/players/{playerId}/below` | An array of `{ playerId, name }` below the player. Player not there → `[]`. |
+
+`asOf` accepts ISO-8601 only: `yyyy-MM-dd`, `yyyy-MM-ddTHH:mm[K]` or `yyyy-MM-ddTHH:mm:ss[.fffffff][K]`. Without an offset it is UTC (a date alone is midnight UTC). A space is read as an unencoded `+`. Anything else, e.g. `10/11/2026`, returns a 400 ProblemDetails titled `Invalid asOf`.
+
+An invalid sport, team, position or player id throws `DomainValidationException`, which `DomainValidationExceptionHandler` turns into a 400 ProblemDetails with the message as `detail`.
+
+## Configuration
+
+`appsettings.json` holds only logging and `AllowedHosts`. The `http` launch profile listens on `http://localhost:5000` in `Development`.
+
 ## Commands
 
 ```sh
 dotnet build
 dotnet test
+dotnet run --project src/DepthCharts.Api
 ```
 
 ## Testing
 
-xUnit tests are in `tests/DepthCharts.Tests`. `Domain/` covers the value types, the `DepthChart` commands and queries, and replay. `Application/` covers the command serializer and the command and query handlers (idempotency, no-op and stale-version cases, `asOf`). `Infrastructure/` covers `EfEventStore` and the DI registration. `TestStore.Create()` gives a fresh in-memory store.
+xUnit tests are in `tests/DepthCharts.Tests`. `Domain/` covers the value types, the `DepthChart` commands and queries, and replay. `Application/` covers the command serializer and the command and query handlers (idempotency, no-op and stale-version cases, `asOf`). `Infrastructure/` covers `EfEventStore` and the DI registration. `Api/` calls the endpoints through `WebApplicationFactory` (`ApiFactory.SeedAsync` records commands first) and covers the response shape, empty results, `asOf` formats and 400s. `TestStore.Create()` gives a fresh in-memory store.
