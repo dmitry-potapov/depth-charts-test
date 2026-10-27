@@ -1,4 +1,5 @@
 using Confluent.Kafka;
+using Confluent.Kafka.Admin;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -22,8 +23,8 @@ public sealed class KafkaCommandConsumer(
             GroupId = $"depth-charts-processor-{Guid.NewGuid()}",
             AutoOffsetReset = AutoOffsetReset.Earliest,
             EnableAutoCommit = false,
-            AllowAutoCreateTopics = true,
         };
+        await EnsureTopicAsync(o, ct);
         using var consumer = new ConsumerBuilder<string, string>(config).Build();
         consumer.Subscribe(o.Topic);
         try
@@ -34,6 +35,31 @@ public sealed class KafkaCommandConsumer(
         {
             consumer.Close();
         }
+    }
+
+    // Consumer-side auto-creation is unreliable, so create the topic up front (single partition keeps command order).
+    private async Task EnsureTopicAsync(KafkaOptions o, CancellationToken ct)
+    {
+        try
+        {
+            using var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = o.BootstrapServers }).Build();
+            await EnsureTopicAsync(admin, o.Topic, ct);
+        }
+        catch (Exception e) when (e is KafkaException or OperationCanceledException && !ct.IsCancellationRequested)
+        {
+            // The Api must still start without a broker; the consumer retries via its own metadata refresh.
+            logger.LogWarning(e, "Could not ensure Kafka topic {Topic}", o.Topic);
+        }
+    }
+
+    public static async Task EnsureTopicAsync(IAdminClient admin, string topic, CancellationToken ct)
+    {
+        try
+        {
+            await admin.CreateTopicsAsync([new TopicSpecification { Name = topic, NumPartitions = 1, ReplicationFactor = -1 }])
+                .WaitAsync(ct);
+        }
+        catch (CreateTopicsException e) when (e.Results.All(r => r.Error.Code == ErrorCode.TopicAlreadyExists)) { }
     }
 
     // Kafka timestamps become event OccurredAt, so replays must be deterministic: never fall back to "now".

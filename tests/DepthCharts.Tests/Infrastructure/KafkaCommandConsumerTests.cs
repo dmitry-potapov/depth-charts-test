@@ -1,4 +1,6 @@
+using System.Reflection;
 using Confluent.Kafka;
+using Confluent.Kafka.Admin;
 using DepthCharts.Application;
 using DepthCharts.Application.Abstractions;
 using DepthCharts.Application.Contracts;
@@ -126,5 +128,42 @@ public class KafkaCommandConsumerTests
         await using var factory = new ApiFactory();
 
         Assert.False(factory.Services.GetRequiredService<IOptions<KafkaOptions>>().Value.ConsumerEnabled);
+    }
+
+    public class FakeAdmin : DispatchProxy
+    {
+        public TopicSpecification? Spec;
+        public Exception? Throw;
+
+        protected override object? Invoke(MethodInfo? method, object?[]? args)
+        {
+            if (method!.Name != "CreateTopicsAsync") throw new NotSupportedException(method.Name);
+            Spec = ((IEnumerable<TopicSpecification>)args![0]!).Single();
+            return Throw is null ? Task.CompletedTask : Task.FromException(Throw);
+        }
+    }
+
+    [Fact]
+    public async Task EnsureTopic_CreatesSinglePartitionTopic()
+    {
+        var admin = DispatchProxy.Create<IAdminClient, FakeAdmin>();
+
+        await KafkaCommandConsumer.EnsureTopicAsync(admin, "t", default);
+
+        var spec = ((FakeAdmin)(object)admin).Spec!;
+        Assert.Equal(("t", 1), (spec.Name, spec.NumPartitions));
+    }
+
+    [Fact]
+    public async Task EnsureTopic_AlreadyExists_IsIgnored_OtherErrorsPropagate()
+    {
+        var admin = DispatchProxy.Create<IAdminClient, FakeAdmin>();
+        CreateTopicsException Ex(ErrorCode code) => new([new CreateTopicReport { Topic = "t", Error = new Error(code) }]);
+
+        ((FakeAdmin)(object)admin).Throw = Ex(ErrorCode.TopicAlreadyExists);
+        await KafkaCommandConsumer.EnsureTopicAsync(admin, "t", default);
+
+        ((FakeAdmin)(object)admin).Throw = Ex(ErrorCode.TopicAuthorizationFailed);
+        await Assert.ThrowsAsync<CreateTopicsException>(() => KafkaCommandConsumer.EnsureTopicAsync(admin, "t", default));
     }
 }
