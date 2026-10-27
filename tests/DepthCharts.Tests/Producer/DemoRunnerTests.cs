@@ -56,19 +56,17 @@ public class DemoRunnerTests
     }
 
     [Fact]
-    public async Task Run_UsesFreshTeamPerRun_AndQueriesThatTeam()
+    public async Task Run_UsesConstantTeam_PrintsItAndQueriesIt()
     {
-        var first = new FakePublisher();
-        var second = new FakePublisher();
+        var publisher = new FakePublisher();
         var handler = new StubHandler(uri => uri.EndsWith("/below") ? "[]" : Ready);
+        var output = new StringWriter();
 
-        await Runner(first, handler, new StringWriter(), new StringWriter()).RunAsync(default);
-        await Runner(second, handler, new StringWriter(), new StringWriter()).RunAsync(default);
+        await Runner(publisher, handler, output, new StringWriter()).RunAsync(default);
 
-        var team1 = first.Published[0].Team;
-        Assert.NotEqual(team1, second.Published[0].Team);
-        Assert.All(first.Published, c => Assert.Equal(team1, c.Team));
-        Assert.Contains($"depth-charts/NFL/{team1}", handler.Uris[0]);
+        Assert.All(publisher.Published, c => Assert.Equal("demo-team", c.Team));
+        Assert.Contains("depth-charts/NFL/demo-team", handler.Uris[0]);
+        Assert.Contains("sport: NFL, team: demo-team", output.ToString());
     }
 
     [Fact]

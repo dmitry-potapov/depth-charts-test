@@ -34,13 +34,16 @@ Event-sourced sports depth charts on .NET 10 (Clean Architecture).
    dotnet run --project src/DepthCharts.Producer -- demo
    ```
 
-   It prints exactly:
+   It uses sport `NFL` and team `demo-team`, and prints exactly:
 
    ```
+   sport: NFL, team: demo-team
    WR: [2, 1, 3]
    KR: [1]
    below Alice WR: [1, 3]
    ```
+
+   To check it yourself, query the same chart: `dotnet run --project src/DepthCharts.Producer -- chart NFL demo-team`, or `curl http://localhost:5050/depth-charts/NFL/demo-team`.
 
 5. When done, stop the Api with Ctrl+C and Kafka with `docker compose down`.
 
