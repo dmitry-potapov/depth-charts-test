@@ -1,0 +1,22 @@
+using DepthCharts.Application.Abstractions;
+using DepthCharts.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace DepthCharts.Infrastructure;
+
+public static class DependencyInjection
+{
+    // configuration is unused until stage 3; kept so the Api call site never changes.
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    {
+        // A per-provider root keeps each host (and each WebApplicationFactory) isolated.
+        services.AddSingleton(new InMemoryDatabaseRoot());
+        services.AddDbContext<EventStoreDbContext>((sp, o) =>
+            o.UseInMemoryDatabase("depth-charts", sp.GetRequiredService<InMemoryDatabaseRoot>()));
+        services.AddScoped<IEventStore, EfEventStore>();
+        return services;
+    }
+}
