@@ -72,6 +72,7 @@ public class CliParserTests
     [InlineData("add NFL t:b WR 1 Bob")]
     [InlineData("add NFL tb WR x Bob")]
     [InlineData("chart NFL tb --as-of yesterday")]
+    [InlineData("chart NFL tb --as-of 10/11/2026")]
     public void Parse_InvalidValues_UsageError(string line) =>
         Assert.Throws<CliUsageException>(() => CliParser.Parse(line.Split(' ')));
 

@@ -1,5 +1,5 @@
-using System.Globalization;
 using DepthCharts.Application;
+using DepthCharts.Application.Contracts;
 using DepthCharts.Domain;
 
 namespace DepthCharts.Api;
@@ -31,14 +31,6 @@ public static class DepthChartEndpoints
         return app;
     }
 
-    // ISO-8601 only; a lenient TryParse would read "10/11/2026" as a US date. Offset (K) is optional, defaulting to UTC.
-    private static readonly string[] IsoFormats =
-    [
-        "yyyy-MM-dd",
-        "yyyy-MM-dd'T'HH:mmK",
-        "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK",
-    ];
-
     private static PlayerResponse ToResponse(Player p) => new(p.Id, p.Name);
 
     private static IResult InvalidAsOf() => TypedResults.Problem(statusCode: 400, title: "Invalid asOf");
@@ -48,7 +40,7 @@ public static class DepthChartEndpoints
         at = null;
         if (string.IsNullOrEmpty(asOf)) return true;
         // An unencoded '+' in the offset arrives as a space; spaces are otherwise invalid, so restore it.
-        if (!DateTimeOffset.TryParseExact(asOf.Replace(' ', '+'), IsoFormats, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
+        if (!IsoInstant.TryParse(asOf.Replace(' ', '+'), out var parsed))
             return false;
         at = parsed;
         return true;

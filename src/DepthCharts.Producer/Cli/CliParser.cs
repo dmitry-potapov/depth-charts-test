@@ -98,8 +98,7 @@ public static class CliParser
     {
         if (a.Length == i) return null;
         if (a.Length != i + 2 || a[i] != "--as-of") throw new CliUsageException($"Invalid arguments for '{a[0]}'.");
-        return DateTimeOffset.TryParse(a[i + 1], CultureInfo.InvariantCulture,
-            DateTimeStyles.AssumeUniversal, out var t)
+        return IsoInstant.TryParse(a[i + 1], out var t)
             ? t
             : throw new CliUsageException($"--as-of must be an ISO-8601 instant: '{a[i + 1]}'.");
     }

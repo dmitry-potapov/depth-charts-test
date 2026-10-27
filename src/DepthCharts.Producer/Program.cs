@@ -39,13 +39,18 @@ try
                 await api.GetBelowAsync(b.Sport, b.Team, b.Position, b.PlayerId, b.AsOf, ct)));
             return 0;
         default:
-            return await new DemoRunner(publisher, api, Console.Out).RunAsync(ct);
+            return await new DemoRunner(publisher, api, Console.Out, Console.Error).RunAsync(ct);
     }
 }
 catch (CliUsageException e)
 {
     Console.Error.WriteLine(e.Message);
     Console.Error.WriteLine(CliParser.Usage);
+    return 1;
+}
+catch (OperationCanceledException) // Ctrl+C, or an HttpClient timeout (TaskCanceledException)
+{
+    Console.Error.WriteLine(ct.IsCancellationRequested ? "Cancelled." : "Request timed out.");
     return 1;
 }
 catch (Exception e) when (e is HttpRequestException or ProduceException<string, string>)

@@ -11,15 +11,21 @@ public sealed class KafkaCommandPublisher : ICommandPublisher, IDisposable
     private readonly string _topic;
     private readonly IProducer<string, string> _producer;
 
+    // MessageTimeoutMs makes a down broker fail in 10 s instead of retrying forever.
     public KafkaCommandPublisher(IOptions<KafkaOptions> options)
-    {
-        _topic = options.Value.Topic;
-        // MessageTimeoutMs makes a down broker fail in 10 s instead of retrying forever.
-        _producer = new ProducerBuilder<string, string>(new ProducerConfig
+        : this(options.Value.Topic, new ProducerBuilder<string, string>(new ProducerConfig
         {
             BootstrapServers = options.Value.BootstrapServers,
             MessageTimeoutMs = 10000,
-        }).Build();
+        }).Build())
+    {
+    }
+
+    // Test seam: lets a fake producer capture what is produced.
+    internal KafkaCommandPublisher(string topic, IProducer<string, string> producer)
+    {
+        _topic = topic;
+        _producer = producer;
     }
 
     public static string KeyFor(DepthChartCommand command) =>
