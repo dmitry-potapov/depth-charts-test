@@ -1,6 +1,64 @@
 # Depth Charts
 
-Event-sourced sports depth charts on .NET 10 (Clean Architecture). The Domain and Application layers, an in-memory event store, a Kafka command consumer and read-only HTTP endpoints are implemented.
+Event-sourced sports depth charts on .NET 10 (Clean Architecture). A `Producer` CLI publishes add/remove commands to Kafka; the `Api` (the Processor) consumes them into an in-memory event store and serves read-only HTTP endpoints. The Domain and Application layers hold the rules.
+
+## Prerequisites and running
+
+.NET 10 SDK and Docker (for Kafka).
+
+```sh
+docker compose up -d                                  # Kafka
+dotnet run --project src/DepthCharts.Api              # Processor, http://localhost:5000
+dotnet run --project src/DepthCharts.Producer -- demo
+```
+
+`demo` prints exactly:
+
+```
+WR: [2, 1, 3]
+KR: [1]
+below Alice WR: [1, 3]
+```
+
+## Producer CLI
+
+```sh
+dotnet run --project src/DepthCharts.Producer -- <verb> ...
+```
+
+```
+producer add    <sport> <team> <position> <playerId> <name> [depth]
+producer remove <sport> <team> <position> <playerId>
+producer chart  <sport> <team> [--as-of <iso8601>]
+producer below  <sport> <team> <position> <playerId> [--as-of <iso8601>]
+producer demo
+```
+
+```sh
+producer add NFL tb QB 12 "Tom Brady" 0     # quote names with spaces
+producer remove NFL tb QB 12
+producer chart NFL tb --as-of 2026-10-27T10:00:00+02:00
+producer below NFL tb QB 12
+producer demo
+```
+
+- Arguments are validated before anything is sent; each command gets a fresh `CommandId`. A bad argument prints the message and usage to stderr and exits `1`.
+- `add` and `remove` publish to Kafka (key = stream id, value = JSON command). `chart`, `below` and `demo` read from the Api.
+- `demo` publishes the brief's example for `NFL/demo`, polls until the Api has processed it (10 s timeout, exit `1` on timeout), then prints the result. Running it twice gives the same output, because re-adding a player moves them.
+- An unreachable Api, or a Kafka broker that is down (the publish times out after 10 s), prints an error to stderr and exits `1`.
+- Configuration: `Kafka:BootstrapServers` (default `localhost:9092`) and `Api:BaseUrl` (default `http://localhost:5000`), via `appsettings`/environment (e.g. `Api__BaseUrl`).
+
+## Assumptions
+
+- Sport and position are free-form (any sport, e.g. MLB `1B`). Sport is upper-cased and limited to letters and digits; team is lower-cased and limited to letters, digits and `-`; position is trimmed and upper-cased.
+- Adding at an occupied depth inserts the player there and bumps everyone below down one place. A player already at that position is moved, with the depth resolved without them.
+- A player's natural position is informational only; they can be added to any position.
+
+## Limits
+
+- History lives only while the topic does; deleting it or letting retention expire loses the history on the next Api start.
+- Every Api start replays the whole topic, so startup is O(total commands).
+- Consumption is single-threaded, and the in-memory store relies on that.
 
 ## Domain rules
 
@@ -81,4 +139,4 @@ dotnet run --project src/DepthCharts.Api
 
 ## Testing
 
-xUnit tests are in `tests/DepthCharts.Tests`. `Domain/` covers the value types, the `DepthChart` commands and queries, and replay. `Application/` covers the command serializer and the command and query handlers (idempotency, no-op and stale-version cases, `asOf`). `Infrastructure/` covers `EfEventStore`, the DI registration, `CommandMessageProcessor` (applied, skipped and logged messages, cancellation) and `KafkaCommandConsumer`'s loop with a fake `consume` function (timestamps, consume errors, the disabled switch). No test needs a running broker. `Api/` calls the endpoints through `WebApplicationFactory`. `ApiFactory` turns the consumer off, and `ApiFactory.SeedAsync` records commands before each call. These tests cover the response shape, empty results, `asOf` formats and 400s. `TestStore.Create()` gives a fresh in-memory store.
+xUnit tests are in `tests/DepthCharts.Tests`. `Domain/` covers the value types, the `DepthChart` commands and queries, and replay. `Application/` covers the command serializer and the command and query handlers (idempotency, no-op and stale-version cases, `asOf`). `Infrastructure/` covers `EfEventStore`, the DI registration, `CommandMessageProcessor` (applied, skipped and logged messages, cancellation) and `KafkaCommandConsumer`'s loop with a fake `consume` function (timestamps, consume errors, the disabled switch). No test needs a running broker. `Api/` calls the endpoints through `WebApplicationFactory`. `ApiFactory` turns the consumer off, and `ApiFactory.SeedAsync` records commands before each call. These tests cover the response shape, empty results, `asOf` formats and 400s. `TestStore.Create()` gives a fresh in-memory store. `Producer/` covers CLI parsing and validation, chart formatting, and the Api client's URIs (including the escaped `asOf`) and JSON; `Infrastructure/KafkaCommandPublisherTests` covers the message key. The Kafka publish itself and `demo` are checked by running them against Docker.
