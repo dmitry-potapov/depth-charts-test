@@ -8,8 +8,10 @@ public class EfSportRegistryTests
     [Fact]
     public async Task Nfl_IsSeededWithBriefPositions()
     {
+        // Act
         var allowed = await TestStore.Sports().GetAllowedPositionsAsync(new Sport("NFL"), default);
 
+        // Assert
         Assert.Equal(
             new[] { "QB", "WR", "RB", "TE", "K", "P", "KR", "PR" }.Order(),
             allowed!.Select(p => p.Value).Order());
@@ -18,8 +20,10 @@ public class EfSportRegistryTests
     [Fact]
     public async Task Mlb_IsSeededWithBriefPositions()
     {
+        // Act
         var allowed = await TestStore.Sports().GetAllowedPositionsAsync(new Sport("MLB"), default);
 
+        // Assert
         Assert.Equal(11, allowed!.Count);
         Assert.Contains(new Position("1B"), allowed);
     }
@@ -31,11 +35,13 @@ public class EfSportRegistryTests
     [Fact]
     public async Task NullOrEmptyList_MeansAnyPosition()
     {
+        // Arrange
         var db = TestStore.NewContext();
         db.Sports.AddRange(new SportDefinition { Sport = "AAA" }, new SportDefinition { Sport = "BBB", AllowedPositions = [] });
         await db.SaveChangesAsync();
         var registry = new EfSportRegistry(db);
 
+        // Act & Assert
         Assert.Null(await registry.GetAllowedPositionsAsync(new Sport("AAA"), default));
         Assert.Null(await registry.GetAllowedPositionsAsync(new Sport("BBB"), default));
     }

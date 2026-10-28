@@ -11,8 +11,10 @@ public class CliParserTests
     [Fact]
     public void Parse_Add_WithDepth()
     {
+        // Act
         var add = ParseAdd("add", "NFL", "tb", "WR", "1", "Bob", "0");
 
+        // Assert
         Assert.Equal(1, add.PlayerId);
         Assert.Equal("Bob", add.PlayerName);
         Assert.Equal(0, add.Depth);
@@ -38,9 +40,11 @@ public class CliParserTests
     [Fact]
     public void Parse_Remove()
     {
+        // Act
         var remove = Assert.IsType<RemovePlayerCommand>(
             Assert.IsType<PublishRequest>(CliParser.Parse(["remove", "NFL", "tb", "WR", "1"])).Command);
 
+        // Assert
         Assert.Equal(1, remove.PlayerId);
         Assert.Equal("WR", remove.Position);
     }
@@ -48,17 +52,21 @@ public class CliParserTests
     [Fact]
     public void Parse_Chart_WithAsOf()
     {
+        // Act
         var chart = Assert.IsType<ChartRequest>(
             CliParser.Parse(["chart", "NFL", "tb", "--as-of", "2026-10-27T10:00:00+02:00"]));
 
+        // Assert
         Assert.Equal(new DateTimeOffset(2026, 10, 27, 8, 0, 0, TimeSpan.Zero), chart.AsOf);
     }
 
     [Fact]
     public void Parse_Below_WithoutAsOf()
     {
+        // Act
         var below = Assert.IsType<BelowRequest>(CliParser.Parse(["below", "NFL", "tb", "WR", "2"]));
 
+        // Assert
         Assert.Equal(2, below.PlayerId);
         Assert.Null(below.AsOf);
     }
@@ -66,9 +74,11 @@ public class CliParserTests
     [Fact]
     public void Parse_Below_WithAsOf()
     {
+        // Act
         var below = Assert.IsType<BelowRequest>(
             CliParser.Parse(["below", "NFL", "tb", "WR", "2", "--as-of", "2026-10-27T08:00:00Z"]));
 
+        // Assert
         Assert.Equal(new DateTimeOffset(2026, 10, 27, 8, 0, 0, TimeSpan.Zero), below.AsOf);
     }
 
@@ -99,6 +109,8 @@ public class CliParserTests
     [InlineData("nope")]
     [InlineData("add", "NFL")]
     [InlineData("remove", "NFL", "tb", "WR")]
+    [InlineData("chart", "NFL")]
+    [InlineData("below", "NFL", "tb", "WR")]
     [InlineData("chart", "NFL", "tb", "--as-of")]
     public void Parse_BadShape_UsageError(params string[] args) =>
         Assert.Throws<CliUsageException>(() => CliParser.Parse(args));

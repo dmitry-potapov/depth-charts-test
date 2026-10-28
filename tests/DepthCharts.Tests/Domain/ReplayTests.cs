@@ -24,6 +24,7 @@ public class ReplayTests
     [Fact]
     public void Replay_EmittedEvents_RebuildsEqualState()
     {
+        // Arrange
         var a = new DepthChart(NFL, TB);
         var log = new List<IDomainEvent>();
         Run(a, log, a.AddPlayer(Pl(1), P("WR"), 0, T0));
@@ -34,8 +35,10 @@ public class ReplayTests
         Run(a, log, a.RemovePlayer(2, P("WR"), T0));
         Run(a, log, a.RemovePlayer(9, P("WR"), T0));
 
+        // Act
         var b = DepthChart.Replay(NFL, TB, log);
 
+        // Assert
         Assert.Equal(Snapshot(a), Snapshot(b));
         Assert.Equal(6, a.Version);
         Assert.Equal(6, b.Version);
@@ -44,6 +47,7 @@ public class ReplayTests
     [Fact]
     public void Replay_FilteredByOccurredAt_GivesEarlierChart()
     {
+        // Arrange
         var a = new DepthChart(NFL, TB);
         var log = new List<IDomainEvent>();
         Run(a, log, a.AddPlayer(Pl(1), P("WR"), null, T0));
@@ -51,15 +55,20 @@ public class ReplayTests
         var afterTwo = Snapshot(a);
         Run(a, log, a.RemovePlayer(1, P("WR"), T0.AddMinutes(2)));
 
+        // Act
         var past = DepthChart.Replay(NFL, TB, log.Where(e => e.OccurredAt <= T0.AddMinutes(1)));
 
+        // Assert
         Assert.Equal(afterTwo, Snapshot(past));
     }
 
     [Fact]
     public void Replay_NoEvents_IsEmptyChart()
     {
+        // Act
         var c = DepthChart.Replay(NFL, TB, []);
+
+        // Assert
         Assert.Empty(c.GetFullChart());
         Assert.Equal(0, c.Version);
     }

@@ -28,11 +28,14 @@ public class DepthChartQueryHandlerTests
     [Fact]
     public async Task FullChart_BriefExample()
     {
+        // Arrange
         var (query, command) = Handlers();
         await SeedBriefExample(command);
 
+        // Act
         var chart = await query.GetFullChartAsync(new GetFullDepthChartQuery("NFL", "tb", null), default);
 
+        // Assert
         Assert.Equal([2, 1, 3], chart[new Position("WR")].Select(p => p.Id));
         Assert.Equal([1], chart[new Position("KR")].Select(p => p.Id));
     }
@@ -40,31 +43,39 @@ public class DepthChartQueryHandlerTests
     [Fact]
     public async Task PlayersUnder_BriefExample()
     {
+        // Arrange
         var (query, command) = Handlers();
         await SeedBriefExample(command);
 
+        // Act
         var under = await query.GetPlayersUnderAsync(new GetPlayersUnderQuery("NFL", "tb", "WR", 2, null), default);
 
+        // Assert
         Assert.Equal([1, 3], under.Select(p => p.Id));
     }
 
     [Fact]
     public async Task FullChart_AsOf_ReturnsEarlierChart()
     {
+        // Arrange
         var (query, command) = Handlers();
         await command.HandleAsync(Add(1, "Bob", "WR", null), T0, default);
         await command.HandleAsync(Add(2, "Alice", "WR", null), T0.AddMinutes(1), default);
 
+        // Act
         var chart = await query.GetFullChartAsync(new GetFullDepthChartQuery("NFL", "tb", T0.AddSeconds(30)), default);
 
+        // Assert
         Assert.Equal([1], chart[new Position("WR")].Select(p => p.Id));
     }
 
     [Fact]
     public async Task UnknownTeam_EmptyResults()
     {
+        // Arrange
         var (query, _) = Handlers();
 
+        // Act & Assert
         Assert.Empty(await query.GetFullChartAsync(new GetFullDepthChartQuery("NFL", "zz", null), default));
         Assert.Empty(await query.GetPlayersUnderAsync(new GetPlayersUnderQuery("NFL", "zz", "WR", 1, null), default));
     }
@@ -72,8 +83,10 @@ public class DepthChartQueryHandlerTests
     [Fact]
     public async Task InvalidQueryInput_ThrowsDomainValidation()
     {
+        // Arrange
         var (query, _) = Handlers();
 
+        // Act & Assert
         await Assert.ThrowsAsync<DomainValidationException>(() =>
             query.GetFullChartAsync(new GetFullDepthChartQuery("NFL", "", null), default));
     }

@@ -35,10 +35,13 @@ public class DepthChartEndpointsTests(ApiFactory factory) : IClassFixture<ApiFac
     [Fact]
     public async Task Chart_BriefExample_ShapeAndOrder()
     {
+        // Arrange
         await SeedBrief("t1");
 
+        // Act
         var response = await _client.GetAsync("/depth-charts/nfl/t1");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(["WR", "KR"], doc.RootElement.EnumerateObject().Select(p => p.Name));
@@ -49,18 +52,23 @@ public class DepthChartEndpointsTests(ApiFactory factory) : IClassFixture<ApiFac
     [Fact]
     public async Task Below_BriefExample()
     {
+        // Arrange
         await SeedBrief("t2");
 
+        // Act
         var players = await _client.GetFromJsonAsync<JsonElement>("/depth-charts/nfl/t2/positions/wr/players/2/below");
 
+        // Assert
         Assert.Equal([1, 3], players.EnumerateArray().Select(p => p.GetProperty("playerId").GetInt32()));
     }
 
     [Fact]
     public async Task Chart_UnknownTeam_EmptyObject()
     {
+        // Act
         var response = await _client.GetAsync("/depth-charts/nfl/nobody");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("{}", await response.Content.ReadAsStringAsync());
     }
@@ -68,10 +76,13 @@ public class DepthChartEndpointsTests(ApiFactory factory) : IClassFixture<ApiFac
     [Fact]
     public async Task Below_UnknownPlayer_EmptyArray()
     {
+        // Arrange
         await SeedBrief("t3");
 
+        // Act
         var response = await _client.GetAsync("/depth-charts/nfl/t3/positions/wr/players/99/below");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("[]", await response.Content.ReadAsStringAsync());
     }
@@ -79,24 +90,30 @@ public class DepthChartEndpointsTests(ApiFactory factory) : IClassFixture<ApiFac
     [Fact]
     public async Task Chart_AsOf_ReturnsEarlierChart()
     {
+        // Arrange
         await factory.SeedAsync(Add("t4", 1, "Bob", "WR", null), T0);
         await factory.SeedAsync(Add("t4", 2, "Alice", "WR", null), T0.AddHours(1));
-
         var asOf = Uri.EscapeDataString(T0.AddMinutes(30).ToString("O"));
+
+        // Act
         var chart = await _client.GetFromJsonAsync<JsonElement>($"/depth-charts/nfl/t4?asOf={asOf}");
 
+        // Assert
         Assert.Equal(1, chart.GetProperty("WR").GetArrayLength());
     }
 
     [Fact]
     public async Task Chart_AsOfWithOffset_ComparesAsInstant()
     {
+        // Arrange
         await factory.SeedAsync(Add("t5", 1, "Bob", "WR", null), T0);
 
+        // Act
         // 10:30+02:00 is 08:30Z (before the 09:00Z event); 11:30+02:00 is 09:30Z.
         var before = await _client.GetStringAsync("/depth-charts/nfl/t5?asOf=" + Uri.EscapeDataString("2026-10-27T10:30:00+02:00"));
         var after = await _client.GetFromJsonAsync<JsonElement>("/depth-charts/nfl/t5?asOf=" + Uri.EscapeDataString("2026-10-27T11:30:00+02:00"));
 
+        // Assert
         Assert.Equal("{}", before);
         Assert.Equal(1, after.GetProperty("WR").GetArrayLength());
     }
@@ -125,16 +142,20 @@ public class DepthChartEndpointsTests(ApiFactory factory) : IClassFixture<ApiFac
     [InlineData("2026-10-27T08:30Z")]
     public async Task Chart_ValidIsoAsOfForms_BeforeEvent_EmptyChart(string asOf)
     {
+        // Arrange
         await factory.SeedAsync(Add("t10", 1, "Bob", "WR", null), T0);
 
+        // Act & Assert
         Assert.Equal("{}", await _client.GetStringAsync("/depth-charts/nfl/t10?asOf=" + asOf));
     }
 
     [Fact]
     public async Task Chart_DateOnlyAsOf_IsMidnightUtc()
     {
+        // Arrange
         await factory.SeedAsync(Add("t11", 1, "Bob", "WR", null), T0);
 
+        // Act & Assert
         Assert.Equal("{}", await _client.GetStringAsync("/depth-charts/nfl/t11?asOf=2026-10-27"));
         Assert.Contains("WR", await _client.GetStringAsync("/depth-charts/nfl/t11?asOf=2026-10-28"));
     }
@@ -142,13 +163,16 @@ public class DepthChartEndpointsTests(ApiFactory factory) : IClassFixture<ApiFac
     [Fact]
     public async Task Below_AsOf_ReturnsEarlierChart()
     {
+        // Arrange
         await factory.SeedAsync(Add("t8", 1, "Bob", "WR", null), T0);
         await factory.SeedAsync(Add("t8", 2, "Alice", "WR", null), T0.AddHours(1));
-
         var asOf = Uri.EscapeDataString(T0.AddMinutes(30).ToString("O"));
+
+        // Act
         var now = await _client.GetFromJsonAsync<JsonElement>("/depth-charts/nfl/t8/positions/wr/players/1/below");
         var past = await _client.GetFromJsonAsync<JsonElement>($"/depth-charts/nfl/t8/positions/wr/players/1/below?asOf={asOf}");
 
+        // Assert
         Assert.Equal(1, now.GetArrayLength());
         Assert.Equal(0, past.GetArrayLength());
     }

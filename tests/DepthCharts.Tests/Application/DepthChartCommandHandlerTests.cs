@@ -10,31 +10,53 @@ public class DepthChartCommandHandlerTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 27, 12, 0, 0, TimeSpan.Zero);
 
-    private static AddPlayerCommand Add(Guid? id = null, string sport = "nfl", string team = "TB", int playerId = 1, string name = "Bob") =>
-        new(id ?? Guid.NewGuid(), sport, team, "WR", playerId, name, null, null);
+    private static AddPlayerCommand Add(Guid? id = null, string sport = "nfl", string team = "TB", int playerId = 1,
+        string name = "Bob", string position = "WR", string? playerPosition = null) =>
+        new(id ?? Guid.NewGuid(), sport, team, position, playerId, name, playerPosition, null);
 
     [Fact]
     public async Task Handle_AddPlayer_AppendsEvent()
     {
+        // Arrange
         var store = TestStore.Create();
 
+        // Act
         await new DepthChartCommandHandler(store, TestStore.Sports()).HandleAsync(Add(), T0, default);
 
+        // Assert
         var added = Assert.IsType<PlayerAddedToDepthChart>(Assert.Single(await store.LoadAsync("nfl:tb", null, default)));
         Assert.Equal(T0, added.OccurredAt);
+        Assert.Null(added.Player.NaturalPosition);
+    }
+
+    [Fact]
+    public async Task Handle_AddPlayer_WithPlayerPosition_StoresIt()
+    {
+        // Arrange
+        var store = TestStore.Create();
+
+        // Act
+        await new DepthChartCommandHandler(store, TestStore.Sports()).HandleAsync(Add(playerPosition: "qb"), T0, default);
+
+        // Assert
+        var added = Assert.IsType<PlayerAddedToDepthChart>(Assert.Single(await store.LoadAsync("nfl:tb", null, default)));
+        Assert.Equal(new Position("QB"), added.Player.NaturalPosition);
     }
 
     [Fact]
     public async Task Handle_DuplicateCommandId_Ignored()
     {
+        // Arrange
         var store = TestStore.Create();
         var handler = new DepthChartCommandHandler(store, TestStore.Sports());
         var addId = Guid.NewGuid();
         await handler.HandleAsync(Add(addId), T0, default);
         await handler.HandleAsync(new RemovePlayerCommand(Guid.NewGuid(), "nfl", "TB", "WR", 1), T0, default);
 
+        // Act
         await handler.HandleAsync(Add(addId), T0, default);
 
+        // Assert
         var events = await store.LoadAsync("nfl:tb", null, default);
         Assert.Equal(2, events.Count);
         var chart = DepthChart.Replay(new Sport("nfl"), new Team("tb"), events);
@@ -44,11 +66,14 @@ public class DepthChartCommandHandlerTests
     [Fact]
     public async Task Handle_NoOpRemove_AppendsNothing()
     {
+        // Arrange
         var store = TestStore.Create();
         var id = Guid.NewGuid();
 
+        // Act
         await new DepthChartCommandHandler(store, TestStore.Sports()).HandleAsync(new RemovePlayerCommand(id, "nfl", "tb", "WR", 1), T0, default);
 
+        // Assert
         Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
         Assert.True(await store.HasProcessedAsync(id, default));
     }
@@ -56,6 +81,7 @@ public class DepthChartCommandHandlerTests
     [Fact]
     public async Task Handle_RedeliveredNoOpRemove_DoesNotRemoveLaterAddedPlayer()
     {
+        // Arrange
         var store = TestStore.Create();
         var handler = new DepthChartCommandHandler(store, TestStore.Sports());
         var remove = new RemovePlayerCommand(Guid.NewGuid(), "nfl", "tb", "WR", 1);
@@ -63,9 +89,11 @@ public class DepthChartCommandHandlerTests
         await handler.HandleAsync(remove, T0, default);
         await handler.HandleAsync(add, T0, default);
 
+        // Act
         await handler.HandleAsync(remove, T0, default);
         await handler.HandleAsync(add, T0, default);
 
+        // Assert
         var chart = DepthChart.Replay(new Sport("nfl"), new Team("tb"), await store.LoadAsync("nfl:tb", null, default));
         Assert.Single(chart.GetFullChart());
     }
@@ -73,11 +101,14 @@ public class DepthChartCommandHandlerTests
     [Fact]
     public async Task Handle_EmptyCommandId_Rejected()
     {
+        // Arrange
         var store = TestStore.Create();
         var handler = new DepthChartCommandHandler(store, TestStore.Sports());
 
+        // Act & Assert
         await Assert.ThrowsAsync<DomainValidationException>(() => handler.HandleAsync(Add(Guid.Empty), T0, default));
 
+        // Assert
         Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
         Assert.False(await store.HasProcessedAsync(Guid.Empty, default));
     }
@@ -85,16 +116,19 @@ public class DepthChartCommandHandlerTests
     [Fact]
     public async Task Handle_InvalidRemoveOrDepth_ThrowsAndRecordsNothing()
     {
+        // Arrange
         var store = TestStore.Create();
         var handler = new DepthChartCommandHandler(store, TestStore.Sports());
         var removeId = Guid.NewGuid();
         var addId = Guid.NewGuid();
 
+        // Act & Assert
         await Assert.ThrowsAsync<DomainValidationException>(() =>
             handler.HandleAsync(new RemovePlayerCommand(removeId, "nfl", "tb", "WR", 0), T0, default));
         await Assert.ThrowsAsync<DomainValidationException>(() =>
             handler.HandleAsync(new AddPlayerCommand(addId, "nfl", "tb", "WR", 1, "Bob", null, -1), T0, default));
 
+        // Assert
         Assert.False(await store.HasProcessedAsync(removeId, default));
         Assert.False(await store.HasProcessedAsync(addId, default));
         Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
@@ -103,27 +137,30 @@ public class DepthChartCommandHandlerTests
     [Fact]
     public async Task Handle_InvalidInput_ThrowsDomainValidation()
     {
+        // Arrange
         var store = TestStore.Create();
         var handler = new DepthChartCommandHandler(store, TestStore.Sports());
 
+        // Act & Assert
         await Assert.ThrowsAsync<DomainValidationException>(() => handler.HandleAsync(Add(team: "t:b"), T0, default));
         await Assert.ThrowsAsync<DomainValidationException>(() => handler.HandleAsync(Add(playerId: 0), T0, default));
 
+        // Assert
         Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
     }
-
-    private static AddPlayerCommand AddAt(string sport, string position) =>
-        new(Guid.NewGuid(), sport, "tb", position, 1, "Bob", null, null);
 
     [Fact]
     public async Task Handle_PositionNotAllowedForSport_ThrowsAndRecordsNothing()
     {
+        // Arrange
         var store = TestStore.Create();
-        var command = AddAt("NFL", "SS");
+        var command = Add(sport: "NFL", position: "SS");
 
+        // Act & Assert
         await Assert.ThrowsAsync<DomainValidationException>(
             () => new DepthChartCommandHandler(store, TestStore.Sports()).HandleAsync(command, T0, default));
 
+        // Assert
         Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
         Assert.False(await store.HasProcessedAsync(command.CommandId, default));
     }
@@ -134,47 +171,58 @@ public class DepthChartCommandHandlerTests
     [InlineData("NHL", "anything")] // no registry row: any position
     public async Task Handle_AllowedOrUnregisteredPosition_Appends(string sport, string position)
     {
+        // Arrange
         var store = TestStore.Create();
 
-        await new DepthChartCommandHandler(store, TestStore.Sports()).HandleAsync(AddAt(sport, position), T0, default);
+        // Act
+        await new DepthChartCommandHandler(store, TestStore.Sports()).HandleAsync(Add(sport: sport, position: position), T0, default);
 
+        // Assert
         Assert.Single(await store.LoadAsync($"{sport.ToLowerInvariant()}:tb", null, default));
     }
 
     [Fact]
     public async Task Handle_Remove_SkipsPositionCheck()
     {
+        // Arrange
         var store = TestStore.Create();
 
+        // Act
         await new DepthChartCommandHandler(store, TestStore.Sports())
             .HandleAsync(new RemovePlayerCommand(Guid.NewGuid(), "NFL", "tb", "SS", 1), T0, default);
 
+        // Assert
         Assert.Empty(await store.LoadAsync("nfl:tb", null, default));
     }
 
     [Fact]
     public async Task Handle_DifferentCasing_SameStream()
     {
+        // Arrange
         var store = TestStore.Create();
         var handler = new DepthChartCommandHandler(store, TestStore.Sports());
 
+        // Act
         await handler.HandleAsync(Add(sport: "nfl", team: "TB"), T0, default);
         await handler.HandleAsync(Add(sport: "NFL", team: "tb", playerId: 2, name: "Alice"), T0, default);
 
+        // Assert
         Assert.Equal(2, (await store.LoadAsync("nfl:tb", null, default)).Count);
     }
 
     [Fact]
     public async Task Handle_StaleVersion_PropagatesConcurrencyException()
     {
+        // Arrange
         var real = TestStore.Create();
         await new DepthChartCommandHandler(real, TestStore.Sports()).HandleAsync(Add(), T0, default);
-
         var handler = new DepthChartCommandHandler(new StaleLoadStore(real), TestStore.Sports());
-
         var losing = Add(playerId: 2, name: "Alice");
+
+        // Act & Assert
         await Assert.ThrowsAsync<ConcurrencyException>(() => handler.HandleAsync(losing, T0, default));
 
+        // Assert
         Assert.False(await real.HasProcessedAsync(losing.CommandId, default));
         Assert.Single(await real.LoadAsync("nfl:tb", null, default));
     }

@@ -14,9 +14,11 @@ public class DependencyInjectionTests
     [Fact]
     public async Task Handlers_ResolveFromScope()
     {
+        // Arrange
         using var provider = Build();
         using var scope = provider.CreateScope();
 
+        // Act & Assert
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<DepthChartCommandHandler>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<DepthChartQueryHandler>());
         Assert.Empty(await scope.ServiceProvider.GetRequiredService<IEventStore>().LoadAsync("nfl:tb", null, default));
@@ -25,12 +27,16 @@ public class DependencyInjectionTests
     [Fact]
     public async Task Scopes_ShareData_ButProvidersAreIsolated()
     {
+        // Arrange
         using var a = Build();
         using var b = Build();
         var id = Guid.NewGuid();
+
+        // Act
         using (var scope = a.CreateScope())
             await scope.ServiceProvider.GetRequiredService<IEventStore>().AppendAsync("nfl:tb", 0, id, [], default);
 
+        // Assert
         using var sameProvider = a.CreateScope();
         using var otherProvider = b.CreateScope();
         Assert.True(await sameProvider.ServiceProvider.GetRequiredService<IEventStore>().HasProcessedAsync(id, default));

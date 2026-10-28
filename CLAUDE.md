@@ -9,6 +9,7 @@
 - Validate input at the boundary. Domain types enforce their own invariants by throwing in the constructor.
 - Async all the way down. Pass the `CancellationToken` through.
 - Every behaviour change needs a test.
+- All tests should have their Arrange/Act/Assert sections marked up.
 - Before saying a task is done, run `dotnet build` and `dotnet test` and confirm both pass.
 - Every tech spec should be stored in the docs folder.
 - Every implementation plan should be put in the docs/implementation-plans folder and committed along with related changes.
