@@ -15,7 +15,7 @@ Event-sourced sports depth charts on .NET 10 (Clean Architecture).
    docker compose up -d
    ```
 
-2. Build and run the tests (optional):
+2. Build and run the tests (optional; the Kafka integration tests need Docker running):
 
    ```sh
    dotnet build

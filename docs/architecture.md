@@ -115,10 +115,11 @@ Producer: `Kafka:BootstrapServers` (default `localhost:9092`) and `Api:BaseUrl` 
 
 ## Testing
 
-xUnit tests are in `tests/DepthCharts.Tests`. No test needs a running broker; only the end-to-end run against a real broker is checked manually with Docker.
+xUnit tests are in `tests/DepthCharts.Tests`. `dotnet test` needs Docker running: `Integration/` starts a real Kafka broker with Testcontainers. All other tests run in memory.
 
 - `Domain/` covers the value types, the `DepthChart` commands and queries, and replay.
 - `Application/` covers the command serializer and the command and query handlers (idempotency, no-op and stale-version cases, `asOf`).
 - `Infrastructure/` covers `EfEventStore`, `EfSportRegistry` (seeded NFL/MLB, any-position cases), the DI registration, `CommandMessageProcessor` (applied, skipped and logged messages, cancellation) and `KafkaCommandConsumer`'s loop with a fake `consume` function (timestamps, consume errors, the disabled switch). `KafkaCommandPublisherTests` covers the message key and DI registration; `KafkaCommandPublisherProduceTests` uses a fake `IProducer` to check the topic, key and value, that an already-cancelled publish sends nothing, and that idempotence is on.
 - `Api/` calls the endpoints through `WebApplicationFactory`. `ApiFactory` turns the consumer off, and `ApiFactory.SeedAsync` records commands before each call. These tests cover the response shape, empty results, `asOf` formats and 400s. `TestStore.Create()` gives a fresh in-memory store.
+- `Integration/KafkaEndToEndTests` starts an `apache/kafka` container and runs the Api with the consumer on. It checks that commands published by `KafkaCommandPublisher` reach the chart in order (this also covers topic creation and subscribe), and that a restarted host replays the topic from the earliest offset.
 - `Producer/` covers CLI parsing and validation, chart formatting, the Api client's URIs (including the escaped `asOf`) and JSON, `DemoRunner` (constant team, printed sport/team, timeout, caller cancellation) and `ProducerApp` (verb routing, exit codes and stderr for usage errors, Ctrl+C, timeouts, Kafka/HTTP failures, non-JSON responses and bad config).
